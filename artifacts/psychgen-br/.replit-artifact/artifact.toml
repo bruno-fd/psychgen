@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "PsychGen BR"
+version = "1.0.0"
+id = "artifacts/psychgen-br"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23049
+
+[services.development]
+run = "pnpm --filter @workspace/psychgen-br run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/psychgen-br", "run", "build" ]
+publicDir = "artifacts/psychgen-br/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23049"
+BASE_PATH = "/"

@@ -3,20 +3,30 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: PsychGen BR — AI-driven psychometric instrument development
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: projects
+    description: Psychometric instrument projects
+  - name: pipeline
+    description: Pipeline jobs (AIGENIE, difficulty prediction, IRT calibration)
+  - name: items
+    description: Generated items (review, edit, status)
+  - name: reports
+    description: Calibration reports
+  - name: dashboard
+    description: Dashboard summaries and aggregates
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
+      description: Returns server health status (DB, R runtime, AI providers)
       responses:
         "200":
           description: Healthy
@@ -24,13 +34,710 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Dashboard headline metrics
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/activity:
+    get:
+      operationId: getRecentActivity
+      tags: [dashboard]
+      summary: Recent pipeline activity feed
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Recent activity items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityEntry"
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List all projects
+      responses:
+        "200":
+          description: Project list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      responses:
+        "200":
+          description: Project detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{id}/pipeline:
+    get:
+      operationId: getProjectPipeline
+      tags: [projects]
+      summary: Pipeline overview for a project (all stages and jobs)
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      responses:
+        "200":
+          description: Pipeline overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineOverview"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{id}/items:
+    get:
+      operationId: listProjectItems
+      tags: [items]
+      summary: List items for a project
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      responses:
+        "200":
+          description: Items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Item"
+
+  /pipeline/jobs:
+    get:
+      operationId: listPipelineJobs
+      tags: [pipeline]
+      summary: List all pipeline jobs (optionally filter by project or stage)
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema: { type: integer }
+        - name: stage
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [aigenie, difficulty, irt]
+      responses:
+        "200":
+          description: Jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PipelineJob"
+
+  /pipeline/jobs/{id}:
+    get:
+      operationId: getPipelineJob
+      tags: [pipeline]
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      responses:
+        "200":
+          description: Job detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineJob"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pipeline/jobs/{id}/cancel:
+    post:
+      operationId: cancelPipelineJob
+      tags: [pipeline]
+      summary: Cancel a queued or running job
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineJob"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{id}/runs/aigenie:
+    post:
+      operationId: runAigenieStage
+      tags: [pipeline]
+      summary: Stage 1 — generate items via AIGENIE-style LLM loop with EGA verification
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AigenieRunInput"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{id}/runs/difficulty:
+    post:
+      operationId: runDifficultyStage
+      tags: [pipeline]
+      summary: Stage 2 — train and apply ML difficulty prediction (glmnet + randomForest)
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DifficultyRunInput"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{id}/runs/irt:
+    post:
+      operationId: runIrtStage
+      tags: [pipeline]
+      summary: Stage 3 — IRT calibration via synthetic LLM respondents (mirt)
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IrtRunInput"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /items/{id}:
+    get:
+      operationId: getItem
+      tags: [items]
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      responses:
+        "200":
+          description: Item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateItem
+      tags: [items]
+      summary: Edit item text or human-review status
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateItemInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /reports:
+    get:
+      operationId: listReports
+      tags: [reports]
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Report"
+
+  /reports/{id}:
+    get:
+      operationId: getReport
+      tags: [reports]
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      responses:
+        "200":
+          description: Report detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Report"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
+        status: { type: string }
+        db: { type: string }
+        rRuntime: { type: string }
+        openai: { type: string }
+        anthropic: { type: string }
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    DashboardSummary:
+      type: object
+      required:
+        - totalProjects
+        - totalItems
+        - approvedItems
+        - jobsRunning
+        - jobsCompleted
+        - jobsFailed
+        - itemsByConstruct
+      properties:
+        totalProjects: { type: integer }
+        totalItems: { type: integer }
+        approvedItems: { type: integer }
+        jobsRunning: { type: integer }
+        jobsCompleted: { type: integer }
+        jobsFailed: { type: integer }
+        itemsByConstruct:
+          type: array
+          items:
+            type: object
+            required: [construct, count]
+            properties:
+              construct: { type: string }
+              count: { type: integer }
+
+    ActivityEntry:
+      type: object
+      required: [id, type, projectId, projectName, message, createdAt]
+      properties:
+        id: { type: integer }
+        type:
+          type: string
+          enum: [job_started, job_completed, job_failed, item_approved, item_rejected, project_created]
+        projectId: { type: integer }
+        projectName: { type: string }
+        message: { type: string }
+        stage:
+          type: ["string", "null"]
+          enum: [aigenie, difficulty, irt, null]
+        createdAt: { type: string, format: date-time }
+
+    Project:
+      type: object
+      required:
+        - id
+        - name
+        - construct
+        - language
+        - targetAudience
+        - status
+        - itemCount
+        - approvedCount
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        construct: { type: string }
+        description:
+          type: ["string", "null"]
+        language: { type: string }
+        targetAudience: { type: string }
+        publisher:
+          type: ["string", "null"]
         status:
           type: string
-      required:
-        - status
+          enum: [draft, generating, calibrating, ready, archived]
+        itemCount: { type: integer }
+        approvedCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
 
+    CreateProjectInput:
+      type: object
+      required: [name, construct, targetAudience]
+      properties:
+        name: { type: string, minLength: 1 }
+        construct: { type: string, minLength: 1 }
+        description:
+          type: ["string", "null"]
+        language: { type: string, default: pt-BR }
+        targetAudience: { type: string, minLength: 1 }
+        publisher:
+          type: ["string", "null"]
+
+    UpdateProjectInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        construct: { type: string, minLength: 1 }
+        description:
+          type: ["string", "null"]
+        language: { type: string }
+        targetAudience: { type: string }
+        publisher:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [draft, generating, calibrating, ready, archived]
+
+    AigenieParams:
+      type: object
+      description: Full AIGENIE parameter surface — every knob exposed to the user
+      required:
+        - model
+        - temperature
+        - topP
+        - targetN
+        - adaptive
+        - allTogether
+        - runOverall
+        - embeddingModel
+      properties:
+        model: { type: string, default: "gpt-4o" }
+        temperature: { type: number, minimum: 0, maximum: 2, default: 0.9 }
+        topP: { type: number, minimum: 0, maximum: 1, default: 1.0 }
+        targetN: { type: integer, minimum: 5, maximum: 200, default: 30 }
+        adaptive: { type: boolean, default: true }
+        allTogether: { type: boolean, default: false }
+        runOverall: { type: boolean, default: true }
+        systemRole:
+          type: ["string", "null"]
+          description: Custom system role for the LLM
+        promptNotes:
+          type: ["string", "null"]
+          description: Extra notes appended to prompt
+        itemAttributes:
+          type: array
+          items: { type: string }
+          description: Constraints/attributes each item must satisfy
+        itemExamples:
+          type: array
+          items: { type: string }
+          description: Few-shot example items
+        embeddingModel: { type: string, default: "text-embedding-3-large" }
+        egaThreshold: { type: number, minimum: 0, maximum: 1, default: 0.7 }
+
+    AigenieRunInput:
+      type: object
+      required: [params]
+      properties:
+        params: { $ref: "#/components/schemas/AigenieParams" }
+
+    DifficultyParams:
+      type: object
+      properties:
+        algorithm:
+          type: string
+          enum: [glmnet, randomForest, ensemble]
+          default: ensemble
+        crossValidationFolds: { type: integer, minimum: 2, maximum: 20, default: 5 }
+        useTextFeatures: { type: boolean, default: true }
+        useEmbeddingFeatures: { type: boolean, default: true }
+        embeddingModel: { type: string, default: "text-embedding-3-large" }
+
+    DifficultyRunInput:
+      type: object
+      required: [params]
+      properties:
+        params: { $ref: "#/components/schemas/DifficultyParams" }
+
+    IrtParams:
+      type: object
+      description: IRT calibration via synthetic LLM respondents
+      required: [models, syntheticN, irtModel]
+      properties:
+        models:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: LLM persona models in the ensemble (e.g. gpt-3.5-turbo, gpt-4o, claude-haiku)
+          default: ["gpt-3.5-turbo", "gpt-4o-mini", "claude-haiku-4-5"]
+        syntheticN: { type: integer, minimum: 50, maximum: 5000, default: 500 }
+        irtModel:
+          type: string
+          enum: [Rasch, "2PL", "3PL", graded]
+          default: "2PL"
+        personaSeed:
+          type: ["string", "null"]
+          description: Persona generation system prompt seed
+        temperature: { type: number, minimum: 0, maximum: 2, default: 1.0 }
+        responseFormat:
+          type: string
+          enum: [likert5, likert7, dichotomous]
+          default: likert5
+
+    IrtRunInput:
+      type: object
+      required: [params]
+      properties:
+        params: { $ref: "#/components/schemas/IrtParams" }
+
+    PipelineJob:
+      type: object
+      required:
+        - id
+        - projectId
+        - stage
+        - status
+        - progress
+        - paramsJson
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: integer }
+        projectId: { type: integer }
+        stage:
+          type: string
+          enum: [aigenie, difficulty, irt]
+        status:
+          type: string
+          enum: [queued, running, completed, failed, cancelled]
+        progress: { type: number, minimum: 0, maximum: 1 }
+        message:
+          type: ["string", "null"]
+        paramsJson:
+          type: object
+          additionalProperties: true
+        resultJson:
+          type: ["object", "null"]
+          additionalProperties: true
+        error:
+          type: ["string", "null"]
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    PipelineOverview:
+      type: object
+      required: [projectId, stages]
+      properties:
+        projectId: { type: integer }
+        stages:
+          type: array
+          items:
+            type: object
+            required: [stage, status, jobCount]
+            properties:
+              stage:
+                type: string
+                enum: [aigenie, difficulty, irt]
+              status:
+                type: string
+                enum: [not_started, running, completed, failed]
+              jobCount: { type: integer }
+              latestJob:
+                anyOf:
+                  - { $ref: "#/components/schemas/PipelineJob" }
+                  - { type: "null" }
+
+    Item:
+      type: object
+      required:
+        - id
+        - projectId
+        - text
+        - status
+        - generatedBy
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: integer }
+        projectId: { type: integer }
+        text: { type: string }
+        construct:
+          type: ["string", "null"]
+        dimension:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [generated, needs_review, approved, rejected]
+        generatedBy: { type: string, description: "Model that generated the item" }
+        difficultyPredicted:
+          type: ["number", "null"]
+        difficultyEstimated:
+          type: ["number", "null"]
+        discrimination:
+          type: ["number", "null"]
+        guessing:
+          type: ["number", "null"]
+        egaCommunity:
+          type: ["integer", "null"]
+        humanNotes:
+          type: ["string", "null"]
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    UpdateItemInput:
+      type: object
+      properties:
+        text: { type: string, minLength: 1 }
+        status:
+          type: string
+          enum: [generated, needs_review, approved, rejected]
+        humanNotes:
+          type: ["string", "null"]
+        construct:
+          type: ["string", "null"]
+        dimension:
+          type: ["string", "null"]
+
+    Report:
+      type: object
+      required: [id, projectId, kind, summary, createdAt]
+      properties:
+        id: { type: integer }
+        projectId: { type: integer }
+        kind:
+          type: string
+          enum: [aigenie, difficulty, irt, validation]
+        summary: { type: string }
+        metricsJson:
+          type: object
+          additionalProperties: true
+        createdAt: { type: string, format: date-time }
