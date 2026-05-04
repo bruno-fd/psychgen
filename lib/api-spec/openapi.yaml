@@ -20,6 +20,8 @@ tags:
     description: Calibration reports
   - name: dashboard
     description: Dashboard summaries and aggregates
+  - name: exports
+    description: Excel and report export
 paths:
   /healthz:
     get:
@@ -197,7 +199,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [aigenie, difficulty, irt]
+            enum: [aigenie, difficulty, irt, sample_design]
       responses:
         "200":
           description: Jobs
@@ -309,6 +311,62 @@ paths:
                 $ref: "#/components/schemas/PipelineJob"
         "400":
           $ref: "#/components/responses/BadRequest"
+
+  /projects/{id}/runs/sample-design:
+    post:
+      operationId: runSampleDesignStage
+      tags: [pipeline]
+      summary: Stage 5 — sample design (post-stratification weights + item shortlist)
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SampleDesignRunInput"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{id}/export.xlsx:
+    get:
+      operationId: exportProjectXlsx
+      tags: [exports]
+      summary: Export full project workbook (items + calibrations + Wright map data) as XLSX
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      responses:
+        "200":
+          description: Excel workbook
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pipeline/jobs/{id}/logs:
+    get:
+      operationId: getPipelineJobLogs
+      tags: [pipeline]
+      summary: Recent log + progress events for a job (REST snapshot of the SSE stream)
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      responses:
+        "200":
+          description: Recent events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/JobLogEvent"
 
   /items/{id}:
     get:
@@ -458,7 +516,7 @@ components:
         message: { type: string }
         stage:
           type: ["string", "null"]
-          enum: [aigenie, difficulty, irt, null]
+          enum: [aigenie, difficulty, irt, sample_design, null]
         createdAt: { type: string, format: date-time }
 
     Project:
@@ -613,6 +671,52 @@ components:
       properties:
         params: { $ref: "#/components/schemas/IrtParams" }
 
+    SampleDesignParams:
+      type: object
+      description: Stage 5 — sample design parameters (post-stratification + item info)
+      required: [targetSampleN, strata, targetThetaSE]
+      properties:
+        targetSampleN: { type: integer, minimum: 30, maximum: 100000, default: 500 }
+        targetThetaSE: { type: number, minimum: 0.05, maximum: 1.0, default: 0.3 }
+        strata:
+          type: array
+          minItems: 1
+          description: Population strata with target population shares (must sum to ~1)
+          items:
+            type: object
+            required: [label, populationShare]
+            properties:
+              label: { type: string, minLength: 1 }
+              populationShare: { type: number, minimum: 0, maximum: 1 }
+              sampledN:
+                type: ["integer", "null"]
+                minimum: 0
+                description: Optional already-collected N per stratum (for weight calc)
+        shortlistMaxItems:
+          type: ["integer", "null"]
+          minimum: 5
+          maximum: 500
+          default: 30
+          description: Number of items to keep in the high-information shortlist
+
+    SampleDesignRunInput:
+      type: object
+      required: [params]
+      properties:
+        params: { $ref: "#/components/schemas/SampleDesignParams" }
+
+    JobLogEvent:
+      type: object
+      required: [type, ts, message]
+      properties:
+        type: { type: string, enum: [progress, log] }
+        ts: { type: string, format: date-time }
+        message: { type: string }
+        progress: { type: ["number", "null"], minimum: 0, maximum: 1 }
+        level:
+          type: ["string", "null"]
+          enum: [info, warn, error, null]
+
     PipelineJob:
       type: object
       required:
@@ -629,7 +733,7 @@ components:
         projectId: { type: integer }
         stage:
           type: string
-          enum: [aigenie, difficulty, irt]
+          enum: [aigenie, difficulty, irt, sample_design]
         status:
           type: string
           enum: [queued, running, completed, failed, cancelled]
@@ -666,7 +770,7 @@ components:
             properties:
               stage:
                 type: string
-                enum: [aigenie, difficulty, irt]
+                enum: [aigenie, difficulty, irt, sample_design]
               status:
                 type: string
                 enum: [not_started, running, completed, failed]
@@ -735,7 +839,7 @@ components:
         projectId: { type: integer }
         kind:
           type: string
-          enum: [aigenie, difficulty, irt, validation]
+          enum: [aigenie, difficulty, irt, validation, sample_design]
         summary: { type: string }
         metricsJson:
           type: object

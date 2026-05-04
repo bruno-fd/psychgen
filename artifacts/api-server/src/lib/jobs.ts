@@ -1,26 +1,82 @@
-import { db, pipelineJobsTable, itemsTable, projectsTable, reportsTable } from "@workspace/db";
+import {
+  db,
+  pipelineJobsTable,
+  itemsTable,
+  projectsTable,
+  reportsTable,
+} from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger";
-import { runAigenie, type AigenieParams } from "./aigenie";
-import { runDifficulty, type DifficultyParams } from "./difficulty";
-import { runIrt, type IrtParams } from "./irt";
+import { runRScript, type RStreamEvent } from "./r-runner";
 
-type Stage = "aigenie" | "difficulty" | "irt";
+class JobCancelledError extends Error {
+  constructor() {
+    super("Job cancelled");
+    this.name = "JobCancelledError";
+  }
+}
+
+type Stage = "aigenie" | "difficulty" | "irt" | "sample_design";
 
 const cancellation = new Map<number, boolean>();
+// In-memory log buffer per job for SSE streaming. Capped at 500 events.
+const jobLogs = new Map<number, RStreamEvent[]>();
+const jobListeners = new Map<number, Set<(e: RStreamEvent) => void>>();
 
 export function requestCancel(jobId: number): void {
   cancellation.set(jobId, true);
 }
 
-async function setProgress(jobId: number, progress: number, message: string): Promise<void> {
+export function getJobLogs(jobId: number): RStreamEvent[] {
+  return jobLogs.get(jobId) ?? [];
+}
+
+export function subscribeJob(
+  jobId: number,
+  listener: (e: RStreamEvent) => void,
+): () => void {
+  let set = jobListeners.get(jobId);
+  if (!set) {
+    set = new Set();
+    jobListeners.set(jobId, set);
+  }
+  set.add(listener);
+  return () => {
+    set?.delete(listener);
+    if (set && set.size === 0) jobListeners.delete(jobId);
+  };
+}
+
+function recordEvent(jobId: number, e: RStreamEvent): void {
+  let buf = jobLogs.get(jobId);
+  if (!buf) {
+    buf = [];
+    jobLogs.set(jobId, buf);
+  }
+  buf.push(e);
+  if (buf.length > 500) buf.splice(0, buf.length - 500);
+  const listeners = jobListeners.get(jobId);
+  if (listeners) for (const l of listeners) l(e);
+}
+
+async function setProgress(
+  jobId: number,
+  progress: number,
+  message: string,
+): Promise<void> {
+  // Skip progress writes after cancellation so we don't resurrect a cancelled
+  // job back to "running" status.
+  if (cancellation.get(jobId)) return;
   await db
     .update(pipelineJobsTable)
     .set({ progress, message, status: "running" })
     .where(eq(pipelineJobsTable.id, jobId));
 }
 
-async function complete(jobId: number, result: Record<string, unknown>): Promise<void> {
+async function complete(
+  jobId: number,
+  result: Record<string, unknown>,
+): Promise<void> {
   await db
     .update(pipelineJobsTable)
     .set({
@@ -61,7 +117,6 @@ export async function enqueueJob(opts: {
     })
     .returning({ id: pipelineJobsTable.id });
   if (!row) throw new Error("Failed to insert job");
-  // Fire and forget — runs in this Node process
   setImmediate(() => {
     runJob(row.id, opts.projectId, opts.stage, opts.params).catch((err) => {
       logger.error({ err, jobId: row.id }, "Unhandled job error");
@@ -81,32 +136,43 @@ async function runJob(
     .set({ status: "running", startedAt: new Date(), progress: 0 })
     .where(eq(pipelineJobsTable.id, jobId));
 
-  const onProgress = (p: number, msg: string) => {
-    if (cancellation.get(jobId)) {
-      throw new Error("Job cancelled");
+  const checkCancel = () => {
+    if (cancellation.get(jobId)) throw new JobCancelledError();
+  };
+  const onEvent = (e: RStreamEvent) => {
+    recordEvent(jobId, e);
+    if (e.type === "progress" && !cancellation.get(jobId)) {
+      void setProgress(jobId, e.progress, e.message);
     }
-    void setProgress(jobId, p, msg);
   };
 
   try {
     if (stage === "aigenie") {
       await setProjectStatus(projectId, "generating");
-      const params = (rawParams as { params?: AigenieParams }).params!;
+      const params = (rawParams as { params?: Record<string, unknown> }).params!;
       const project = await db.query.projectsTable.findFirst({
         where: eq(projectsTable.id, projectId),
       });
       if (!project) throw new Error("Project not found");
 
-      const result = await runAigenie(project.construct, params, onProgress);
-      // Persist generated items
-      if (result.items.length > 0) {
+      const r = await runRScript<{
+        items: { text: string; community: number | null }[];
+        rounds: number;
+        rejected: number;
+        egaSummary: { dimensions: number | null; method: string; n_items: number };
+        model: string;
+      }>("stage1_aigenie.R", { construct: project.construct, params }, { onEvent });
+      if (!r.ok) throw new Error(r.error);
+      checkCancel();
+
+      if (r.result.items.length > 0) {
         await db.insert(itemsTable).values(
-          result.items.map((it) => ({
+          r.result.items.map((it) => ({
             projectId,
             text: it.text,
             construct: project.construct,
             status: "needs_review",
-            generatedBy: params.model,
+            generatedBy: r.result.model,
             egaCommunity: it.community,
           })),
         );
@@ -114,29 +180,51 @@ async function runJob(
       await db.insert(reportsTable).values({
         projectId,
         kind: "aigenie",
-        summary: `${result.items.length} itens gerados em ${result.rounds} rodadas (${result.rejected} rejeitados).`,
+        summary: `${r.result.items.length} itens gerados em ${r.result.rounds} rodadas (${r.result.rejected} rejeitados; EGA: ${r.result.egaSummary.dimensions ?? "n/a"} dimensões via ${r.result.egaSummary.method}).`,
         metricsJson: {
-          generated: result.items.length,
-          rounds: result.rounds,
-          rejected: result.rejected,
-          model: params.model,
-          temperature: params.temperature,
-          egaThreshold: params.egaThreshold,
+          generated: r.result.items.length,
+          rounds: r.result.rounds,
+          rejected: r.result.rejected,
+          ega: r.result.egaSummary,
+          model: r.result.model,
+          params,
         },
       });
       await complete(jobId, {
-        itemsGenerated: result.items.length,
-        rounds: result.rounds,
-        rejected: result.rejected,
+        itemsGenerated: r.result.items.length,
+        rounds: r.result.rounds,
+        rejected: r.result.rejected,
+        egaSummary: r.result.egaSummary,
       });
       await setProjectStatus(projectId, "draft");
     } else if (stage === "difficulty") {
-      const params = (rawParams as { params?: DifficultyParams }).params!;
+      const params = (rawParams as { params?: Record<string, unknown> }).params!;
       const items = await db.query.itemsTable.findMany({
         where: eq(itemsTable.projectId, projectId),
       });
-      const result = await runDifficulty(items, params, onProgress);
-      for (const pred of result.predictions) {
+      const r = await runRScript<{
+        predictions: { itemId: number; predicted: number }[];
+        cvR2: number | null;
+        algorithm: string;
+        trainSize: number;
+        nFeatures: number;
+        topFeatures: { feature: string; importance: number }[];
+      }>(
+        "stage2_difficulty.R",
+        {
+          items: items.map((it) => ({
+            id: it.id,
+            text: it.text,
+            difficultyEstimated: it.difficultyEstimated,
+          })),
+          params,
+        },
+        { onEvent },
+      );
+      if (!r.ok) throw new Error(r.error);
+      checkCancel();
+
+      for (const pred of r.result.predictions) {
         await db
           .update(itemsTable)
           .set({ difficultyPredicted: pred.predicted })
@@ -145,23 +233,27 @@ async function runJob(
       await db.insert(reportsTable).values({
         projectId,
         kind: "difficulty",
-        summary: `Predição de dificuldade para ${result.predictions.length} itens via ${result.algorithm} (R²=${result.cvR2?.toFixed(3) ?? "n/a"}).`,
+        summary: `Predição de dificuldade para ${r.result.predictions.length} itens via ${r.result.algorithm} em R (R²=${r.result.cvR2?.toFixed(3) ?? "n/a"}, ${r.result.nFeatures} features).`,
         metricsJson: {
-          predicted: result.predictions.length,
-          trainSize: result.trainSize,
-          cvR2: result.cvR2,
-          algorithm: result.algorithm,
+          predicted: r.result.predictions.length,
+          trainSize: r.result.trainSize,
+          cvR2: r.result.cvR2,
+          algorithm: r.result.algorithm,
+          nFeatures: r.result.nFeatures,
+          topFeatures: r.result.topFeatures,
         },
       });
       await complete(jobId, {
-        predicted: result.predictions.length,
-        trainSize: result.trainSize,
-        cvR2: result.cvR2,
-        algorithm: result.algorithm,
+        predicted: r.result.predictions.length,
+        trainSize: r.result.trainSize,
+        cvR2: r.result.cvR2,
+        algorithm: r.result.algorithm,
+        nFeatures: r.result.nFeatures,
+        topFeatures: r.result.topFeatures.slice(0, 10),
       });
     } else if (stage === "irt") {
       await setProjectStatus(projectId, "calibrating");
-      const params = (rawParams as { params?: IrtParams }).params!;
+      const params = (rawParams as { params?: Record<string, unknown> }).params!;
       const project = await db.query.projectsTable.findFirst({
         where: eq(projectsTable.id, projectId),
       });
@@ -170,16 +262,37 @@ async function runJob(
         where: eq(itemsTable.projectId, projectId),
       });
       const reviewable = items.filter((it) => it.status !== "rejected");
-      if (reviewable.length < 2) {
+      if (reviewable.length < 2)
         throw new Error("Pelo menos 2 itens válidos são necessários para IRT.");
-      }
-      const result = await runIrt(
-        reviewable.map((it) => ({ id: it.id, text: it.text })),
-        project.construct,
-        params,
-        onProgress,
+
+      const r = await runRScript<{
+        calibrations: {
+          itemId: number;
+          difficulty: number;
+          discrimination: number;
+          guessing: number | null;
+        }[];
+        reliability: number;
+        responsesGenerated: number;
+        modelFit: Record<string, number>;
+        wrightMap: {
+          items: { itemId: number; difficulty: number }[];
+          thetaHistogram: { bin: number; count: number }[];
+          binEdges: number[];
+        };
+      }>(
+        "stage3_irt.R",
+        {
+          construct: project.construct,
+          items: reviewable.map((it) => ({ id: it.id, text: it.text })),
+          params,
+        },
+        { onEvent, timeoutMs: 1000 * 60 * 90 },
       );
-      for (const cal of result.calibrations) {
+      if (!r.ok) throw new Error(r.error);
+      checkCancel();
+
+      for (const cal of r.result.calibrations) {
         await db
           .update(itemsTable)
           .set({
@@ -189,31 +302,81 @@ async function runJob(
           })
           .where(eq(itemsTable.id, cal.itemId));
       }
+      const irtParams = params as { models: string[]; irtModel: string };
       await db.insert(reportsTable).values({
         projectId,
         kind: "irt",
-        summary: `Calibração ${params.irtModel} via ${params.models.length} modelo(s) LLM, ${result.responsesGenerated} respostas, confiabilidade=${result.reliability.toFixed(3)}.`,
+        summary: `Calibração ${irtParams.irtModel} via ${irtParams.models.length} modelo(s) LLM em R, ${r.result.responsesGenerated} respostas, confiabilidade=${r.result.reliability.toFixed(3)}.`,
         metricsJson: {
-          irtModel: params.irtModel,
-          syntheticN: params.syntheticN,
-          responsesGenerated: result.responsesGenerated,
-          reliability: result.reliability,
-          modelFit: result.modelFit,
-          calibrations: result.calibrations.length,
+          irtModel: irtParams.irtModel,
+          syntheticN: (params as { syntheticN: number }).syntheticN,
+          responsesGenerated: r.result.responsesGenerated,
+          reliability: r.result.reliability,
+          modelFit: r.result.modelFit,
+          calibrations: r.result.calibrations.length,
+          wrightMap: r.result.wrightMap,
         },
       });
       await complete(jobId, {
-        calibrations: result.calibrations.length,
-        reliability: result.reliability,
-        responsesGenerated: result.responsesGenerated,
-        modelFit: result.modelFit,
+        calibrations: r.result.calibrations.length,
+        reliability: r.result.reliability,
+        responsesGenerated: r.result.responsesGenerated,
+        modelFit: r.result.modelFit,
+        wrightMap: r.result.wrightMap,
       });
       await setProjectStatus(projectId, "ready");
+    } else if (stage === "sample_design") {
+      const params = (rawParams as { params?: Record<string, unknown> }).params!;
+      const items = await db.query.itemsTable.findMany({
+        where: eq(itemsTable.projectId, projectId),
+      });
+      const calibratedItems = items
+        .filter((it) => it.difficultyEstimated != null)
+        .map((it) => ({
+          id: it.id,
+          difficulty: it.difficultyEstimated,
+          discrimination: it.discrimination,
+          guessing: it.guessing,
+        }));
+      const r = await runRScript<{
+        targetSampleN: number;
+        targetThetaSE: number;
+        perStratum: {
+          label: string;
+          populationShare: number;
+          allocatedN: number;
+          sampledN: number | null;
+          weight: number;
+        }[];
+        effectiveN: number;
+        designEffect: number;
+        testInformationAtZero: number | null;
+        itemShortlist: {
+          itemId: number;
+          info: number;
+          difficulty: number;
+          discrimination: number;
+        }[];
+      }>(
+        "stage5_sample_design.R",
+        { ...params, calibratedItems },
+        { onEvent },
+      );
+      if (!r.ok) throw new Error(r.error);
+      checkCancel();
+
+      await db.insert(reportsTable).values({
+        projectId,
+        kind: "sample_design",
+        summary: `Plano amostral para N=${r.result.targetSampleN} (efetivo=${r.result.effectiveN.toFixed(0)}, deff=${r.result.designEffect.toFixed(2)}, ${r.result.perStratum.length} estratos).`,
+        metricsJson: r.result as unknown as Record<string, unknown>,
+      });
+      await complete(jobId, r.result as unknown as Record<string, unknown>);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ err, jobId, stage }, "Job failed");
-    if (msg === "Job cancelled") {
+    if (err instanceof JobCancelledError || msg === "Job cancelled") {
       await db
         .update(pipelineJobsTable)
         .set({ status: "cancelled", finishedAt: new Date() })

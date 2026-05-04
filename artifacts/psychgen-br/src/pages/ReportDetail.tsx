@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, FileText, Calendar, BarChart2 } from "lucide-react";
 import { formatDate } from "@/lib/formatters";
+import { WrightMap } from "@/components/wright-map";
 
 export default function ReportDetail() {
   const params = useParams();
@@ -18,6 +19,7 @@ export default function ReportDetail() {
       case 'aigenie': return <Badge variant="outline" className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">AIGENIE</Badge>;
       case 'difficulty': return <Badge variant="outline" className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Dificuldade</Badge>;
       case 'irt': return <Badge variant="outline" className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">IRT</Badge>;
+      case 'sample_design': return <Badge variant="outline" className="bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300">Plano Amostral</Badge>;
       case 'validation': return <Badge variant="outline" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Validação</Badge>;
       default: return <Badge variant="outline">{kind}</Badge>;
     }
@@ -69,6 +71,10 @@ export default function ReportDetail() {
             <p className="text-base leading-relaxed">{report.summary}</p>
           </CardContent>
         </Card>
+
+        {report.kind === 'irt' && (report.metricsJson as { wrightMap?: { items?: { itemId: number; difficulty: number }[]; thetaHistogram?: { bin: number; count: number }[] } } | null)?.wrightMap ? (
+          <WrightMap data={(report.metricsJson as { wrightMap: { items?: { itemId: number; difficulty: number }[]; thetaHistogram?: { bin: number; count: number }[] } }).wrightMap} />
+        ) : null}
 
         <Card>
           <CardHeader>

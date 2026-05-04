@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, Play, AlertTriangle, CheckCircle2, Clock, XCircle, Info, Ban } from "lucide-react";
+import { JobLogs } from "@/components/job-logs";
 import { formatDate } from "@/lib/formatters";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -126,6 +127,8 @@ export default function JobDetail() {
           </CardContent>
         </Card>
       )}
+
+      <JobLogs jobId={id} isLive={job.status === "running" || job.status === "queued"} />
 
       <div className="grid md:grid-cols-2 gap-6">
         <Card>

@@ -11,12 +11,15 @@ import {
   RunDifficultyStageBody,
   RunIrtStageParams,
   RunIrtStageBody,
+  RunSampleDesignStageParams,
+  RunSampleDesignStageBody,
+  GetPipelineJobLogsParams,
 } from "@workspace/api-zod";
-import { enqueueJob, requestCancel } from "../lib/jobs";
+import { enqueueJob, requestCancel, getJobLogs, subscribeJob } from "../lib/jobs";
 
 const router: IRouter = Router();
 
-router.get("/jobs", async (req, res) => {
+router.get("/pipeline/jobs", async (req, res) => {
   const query = ListPipelineJobsQueryParams.parse(req.query);
   const filters = [];
   if (query.projectId != null) filters.push(eq(pipelineJobsTable.projectId, query.projectId));
@@ -29,7 +32,7 @@ router.get("/jobs", async (req, res) => {
   res.json(rows);
 });
 
-router.get("/jobs/:id", async (req, res) => {
+router.get("/pipeline/jobs/:id", async (req, res) => {
   const { id } = GetPipelineJobParams.parse(req.params);
   const job = await db.query.pipelineJobsTable.findFirst({
     where: eq(pipelineJobsTable.id, id),
@@ -41,7 +44,28 @@ router.get("/jobs/:id", async (req, res) => {
   res.json(job);
 });
 
-router.post("/jobs/:id/cancel", async (req, res) => {
+router.get("/pipeline/jobs/:id/logs", async (req, res) => {
+  const { id } = GetPipelineJobLogsParams.parse(req.params);
+  // SSE if Accept: text/event-stream, otherwise JSON snapshot
+  if (req.headers.accept?.includes("text/event-stream")) {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+    for (const e of getJobLogs(id)) res.write(`data: ${JSON.stringify(e)}\n\n`);
+    const unsub = subscribeJob(id, (e) => {
+      res.write(`data: ${JSON.stringify(e)}\n\n`);
+    });
+    req.on("close", () => {
+      unsub();
+      res.end();
+    });
+  } else {
+    res.json(getJobLogs(id));
+  }
+});
+
+router.post("/pipeline/jobs/:id/cancel", async (req, res) => {
   const { id } = CancelPipelineJobParams.parse(req.params);
   const job = await db.query.pipelineJobsTable.findFirst({
     where: eq(pipelineJobsTable.id, id),
@@ -66,42 +90,32 @@ router.post("/jobs/:id/cancel", async (req, res) => {
 router.post("/projects/:id/runs/aigenie", async (req, res) => {
   const { id } = RunAigenieStageParams.parse(req.params);
   const body = RunAigenieStageBody.parse(req.body);
-  const jobId = await enqueueJob({
-    projectId: id,
-    stage: "aigenie",
-    params: body as Record<string, unknown>,
-  });
-  const job = await db.query.pipelineJobsTable.findFirst({
-    where: eq(pipelineJobsTable.id, jobId),
-  });
+  const jobId = await enqueueJob({ projectId: id, stage: "aigenie", params: body as Record<string, unknown> });
+  const job = await db.query.pipelineJobsTable.findFirst({ where: eq(pipelineJobsTable.id, jobId) });
   res.status(202).json(job);
 });
 
 router.post("/projects/:id/runs/difficulty", async (req, res) => {
   const { id } = RunDifficultyStageParams.parse(req.params);
   const body = RunDifficultyStageBody.parse(req.body);
-  const jobId = await enqueueJob({
-    projectId: id,
-    stage: "difficulty",
-    params: body as Record<string, unknown>,
-  });
-  const job = await db.query.pipelineJobsTable.findFirst({
-    where: eq(pipelineJobsTable.id, jobId),
-  });
+  const jobId = await enqueueJob({ projectId: id, stage: "difficulty", params: body as Record<string, unknown> });
+  const job = await db.query.pipelineJobsTable.findFirst({ where: eq(pipelineJobsTable.id, jobId) });
   res.status(202).json(job);
 });
 
 router.post("/projects/:id/runs/irt", async (req, res) => {
   const { id } = RunIrtStageParams.parse(req.params);
   const body = RunIrtStageBody.parse(req.body);
-  const jobId = await enqueueJob({
-    projectId: id,
-    stage: "irt",
-    params: body as Record<string, unknown>,
-  });
-  const job = await db.query.pipelineJobsTable.findFirst({
-    where: eq(pipelineJobsTable.id, jobId),
-  });
+  const jobId = await enqueueJob({ projectId: id, stage: "irt", params: body as Record<string, unknown> });
+  const job = await db.query.pipelineJobsTable.findFirst({ where: eq(pipelineJobsTable.id, jobId) });
+  res.status(202).json(job);
+});
+
+router.post("/projects/:id/runs/sample-design", async (req, res) => {
+  const { id } = RunSampleDesignStageParams.parse(req.params);
+  const body = RunSampleDesignStageBody.parse(req.body);
+  const jobId = await enqueueJob({ projectId: id, stage: "sample_design", params: body as Record<string, unknown> });
+  const job = await db.query.pipelineJobsTable.findFirst({ where: eq(pipelineJobsTable.id, jobId) });
   res.status(202).json(job);
 });
 

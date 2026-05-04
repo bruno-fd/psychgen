@@ -10,6 +10,7 @@ import ProjectDetail from "@/pages/ProjectDetail";
 import RunAigenie from "@/pages/RunAigenie";
 import RunDifficulty from "@/pages/RunDifficulty";
 import RunIrt from "@/pages/RunIrt";
+import RunSampleDesign from "@/pages/RunSampleDesign";
 import ItemDetail from "@/pages/ItemDetail";
 import Jobs from "@/pages/Jobs";
 import JobDetail from "@/pages/JobDetail";
@@ -30,6 +31,7 @@ function Router() {
         <Route path="/projects/:id/run/aigenie" component={RunAigenie} />
         <Route path="/projects/:id/run/difficulty" component={RunDifficulty} />
         <Route path="/projects/:id/run/irt" component={RunIrt} />
+        <Route path="/projects/:id/run/sample-design" component={RunSampleDesign} />
         <Route path="/projects/:id/items/:itemId" component={ItemDetail} />
         <Route path="/jobs" component={Jobs} />
         <Route path="/jobs/:id" component={JobDetail} />

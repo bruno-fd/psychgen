@@ -13,4 +13,5 @@ export const ReportKind = {
   difficulty: "difficulty",
   irt: "irt",
   validation: "validation",
+  sample_design: "sample_design",
 } as const;

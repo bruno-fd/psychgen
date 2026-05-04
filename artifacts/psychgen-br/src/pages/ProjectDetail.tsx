@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { formatDate, formatPercent } from "@/lib/formatters";
-import { ArrowLeft, Settings, Trash2, Edit, Activity, Database, Play, CheckCircle2, XCircle, AlertCircle, FileText, ChevronRight } from "lucide-react";
+import { ArrowLeft, Settings, Trash2, Edit, Activity, Database, Play, CheckCircle2, XCircle, AlertCircle, FileText, ChevronRight, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -108,9 +108,16 @@ export default function ProjectDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* <Button variant="outline" size="sm" className="gap-2">
-            <Edit className="h-4 w-4" /> Editar
-          </Button> */}
+          <a
+            href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/projects/${id}/export.xlsx`}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="button-export-xlsx"
+          >
+            <Button variant="outline" size="sm" className="gap-2">
+              <Download className="h-4 w-4" /> Exportar Excel
+            </Button>
+          </a>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive hover:text-destructive-foreground gap-2">
@@ -196,8 +203,8 @@ export default function ProjectDetail() {
         </TabsContent>
 
         <TabsContent value="pipeline" className="mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {['aigenie', 'difficulty', 'irt'].map((stageKey) => {
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {['aigenie', 'difficulty', 'irt', 'sample_design'].map((stageKey) => {
               const stageData = pipeline?.stages.find(s => s.stage === stageKey);
               const status = stageData?.status || 'not_started';
               const latestJob = stageData?.latestJob;
@@ -218,6 +225,11 @@ export default function ProjectDetail() {
                   title = "Estágio 3: Calibração IRT";
                   description = "Calibração via respondentes sintéticos";
                   linkUrl = `/projects/${id}/run/irt`;
+                  break;
+                case 'sample_design':
+                  title = "Estágio 5: Plano Amostral";
+                  description = "Pós-estratificação + shortlist por informação";
+                  linkUrl = `/projects/${id}/run/sample-design`;
                   break;
               }
 

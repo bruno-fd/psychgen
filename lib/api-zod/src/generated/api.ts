@@ -69,6 +69,7 @@ export const GetRecentActivityResponseItem = zod.object({
       zod.literal("aigenie"),
       zod.literal("difficulty"),
       zod.literal("irt"),
+      zod.literal("sample_design"),
       zod.literal(null),
     ])
     .nullish(),
@@ -181,7 +182,7 @@ export const GetProjectPipelineResponse = zod.object({
   projectId: zod.number(),
   stages: zod.array(
     zod.object({
-      stage: zod.enum(["aigenie", "difficulty", "irt"]),
+      stage: zod.enum(["aigenie", "difficulty", "irt", "sample_design"]),
       status: zod.enum(["not_started", "running", "completed", "failed"]),
       jobCount: zod.number(),
       latestJob: zod
@@ -189,7 +190,7 @@ export const GetProjectPipelineResponse = zod.object({
           zod.object({
             id: zod.number(),
             projectId: zod.number(),
-            stage: zod.enum(["aigenie", "difficulty", "irt"]),
+            stage: zod.enum(["aigenie", "difficulty", "irt", "sample_design"]),
             status: zod.enum([
               "queued",
               "running",
@@ -249,7 +250,7 @@ export const ListProjectItemsResponse = zod.array(ListProjectItemsResponseItem);
  */
 export const ListPipelineJobsQueryParams = zod.object({
   projectId: zod.coerce.number().optional(),
-  stage: zod.enum(["aigenie", "difficulty", "irt"]).optional(),
+  stage: zod.enum(["aigenie", "difficulty", "irt", "sample_design"]).optional(),
 });
 
 export const listPipelineJobsResponseProgressMin = 0;
@@ -258,7 +259,7 @@ export const listPipelineJobsResponseProgressMax = 1;
 export const ListPipelineJobsResponseItem = zod.object({
   id: zod.number(),
   projectId: zod.number(),
-  stage: zod.enum(["aigenie", "difficulty", "irt"]),
+  stage: zod.enum(["aigenie", "difficulty", "irt", "sample_design"]),
   status: zod.enum(["queued", "running", "completed", "failed", "cancelled"]),
   progress: zod
     .number()
@@ -285,7 +286,7 @@ export const getPipelineJobResponseProgressMax = 1;
 export const GetPipelineJobResponse = zod.object({
   id: zod.number(),
   projectId: zod.number(),
-  stage: zod.enum(["aigenie", "difficulty", "irt"]),
+  stage: zod.enum(["aigenie", "difficulty", "irt", "sample_design"]),
   status: zod.enum(["queued", "running", "completed", "failed", "cancelled"]),
   progress: zod
     .number()
@@ -315,7 +316,7 @@ export const cancelPipelineJobResponseProgressMax = 1;
 export const CancelPipelineJobResponse = zod.object({
   id: zod.number(),
   projectId: zod.number(),
-  stage: zod.enum(["aigenie", "difficulty", "irt"]),
+  stage: zod.enum(["aigenie", "difficulty", "irt", "sample_design"]),
   status: zod.enum(["queued", "running", "completed", "failed", "cancelled"]),
   progress: zod
     .number()
@@ -514,6 +515,119 @@ export const RunIrtStageBody = zod.object({
     .describe("IRT calibration via synthetic LLM respondents"),
 });
 
+/**
+ * @summary Stage 5 — sample design (post-stratification weights + item shortlist)
+ */
+
+export const RunSampleDesignStageParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+export const runSampleDesignStageBodyParamsTargetSampleNDefault = 500;
+export const runSampleDesignStageBodyParamsTargetSampleNMin = 30;
+export const runSampleDesignStageBodyParamsTargetSampleNMax = 100000;
+
+export const runSampleDesignStageBodyParamsTargetThetaSEDefault = 0.3;
+export const runSampleDesignStageBodyParamsTargetThetaSEMin = 0.05;
+export const runSampleDesignStageBodyParamsTargetThetaSEMax = 1;
+
+export const runSampleDesignStageBodyParamsStrataItemPopulationShareMin = 0;
+export const runSampleDesignStageBodyParamsStrataItemPopulationShareMax = 1;
+
+export const runSampleDesignStageBodyParamsStrataItemSampledNMin = 0;
+
+export const runSampleDesignStageBodyParamsShortlistMaxItemsDefault = 30;
+export const runSampleDesignStageBodyParamsShortlistMaxItemsMin = 5;
+export const runSampleDesignStageBodyParamsShortlistMaxItemsMax = 500;
+
+export const RunSampleDesignStageBody = zod.object({
+  params: zod
+    .object({
+      targetSampleN: zod
+        .number()
+        .min(runSampleDesignStageBodyParamsTargetSampleNMin)
+        .max(runSampleDesignStageBodyParamsTargetSampleNMax)
+        .default(runSampleDesignStageBodyParamsTargetSampleNDefault),
+      targetThetaSE: zod
+        .number()
+        .min(runSampleDesignStageBodyParamsTargetThetaSEMin)
+        .max(runSampleDesignStageBodyParamsTargetThetaSEMax)
+        .default(runSampleDesignStageBodyParamsTargetThetaSEDefault),
+      strata: zod
+        .array(
+          zod.object({
+            label: zod.string().min(1),
+            populationShare: zod
+              .number()
+              .min(runSampleDesignStageBodyParamsStrataItemPopulationShareMin)
+              .max(runSampleDesignStageBodyParamsStrataItemPopulationShareMax),
+            sampledN: zod
+              .number()
+              .min(runSampleDesignStageBodyParamsStrataItemSampledNMin)
+              .nullish()
+              .describe(
+                "Optional already-collected N per stratum (for weight calc)",
+              ),
+          }),
+        )
+        .min(1)
+        .describe(
+          "Population strata with target population shares (must sum to ~1)",
+        ),
+      shortlistMaxItems: zod
+        .number()
+        .min(runSampleDesignStageBodyParamsShortlistMaxItemsMin)
+        .max(runSampleDesignStageBodyParamsShortlistMaxItemsMax)
+        .nullish()
+        .default(runSampleDesignStageBodyParamsShortlistMaxItemsDefault)
+        .describe("Number of items to keep in the high-information shortlist"),
+    })
+    .describe(
+      "Stage 5 — sample design parameters (post-stratification + item info)",
+    ),
+});
+
+/**
+ * @summary Export full project workbook (items + calibrations + Wright map data) as XLSX
+ */
+
+export const ExportProjectXlsxParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+/**
+ * @summary Recent log + progress events for a job (REST snapshot of the SSE stream)
+ */
+
+export const GetPipelineJobLogsParams = zod.object({
+  id: zod.coerce.number().min(1),
+});
+
+export const getPipelineJobLogsResponseProgressMin = 0;
+export const getPipelineJobLogsResponseProgressMax = 1;
+
+export const GetPipelineJobLogsResponseItem = zod.object({
+  type: zod.enum(["progress", "log"]),
+  ts: zod.coerce.date(),
+  message: zod.string(),
+  progress: zod
+    .number()
+    .min(getPipelineJobLogsResponseProgressMin)
+    .max(getPipelineJobLogsResponseProgressMax)
+    .nullish(),
+  level: zod
+    .union([
+      zod.literal("info"),
+      zod.literal("warn"),
+      zod.literal("error"),
+      zod.literal(null),
+    ])
+    .nullish(),
+});
+export const GetPipelineJobLogsResponse = zod.array(
+  GetPipelineJobLogsResponseItem,
+);
+
 export const GetItemParams = zod.object({
   id: zod.coerce.number().min(1),
 });
@@ -579,7 +693,13 @@ export const ListReportsQueryParams = zod.object({
 export const ListReportsResponseItem = zod.object({
   id: zod.number(),
   projectId: zod.number(),
-  kind: zod.enum(["aigenie", "difficulty", "irt", "validation"]),
+  kind: zod.enum([
+    "aigenie",
+    "difficulty",
+    "irt",
+    "validation",
+    "sample_design",
+  ]),
   summary: zod.string(),
   metricsJson: zod.record(zod.string(), zod.unknown()).optional(),
   createdAt: zod.coerce.date(),
@@ -593,7 +713,13 @@ export const GetReportParams = zod.object({
 export const GetReportResponse = zod.object({
   id: zod.number(),
   projectId: zod.number(),
-  kind: zod.enum(["aigenie", "difficulty", "irt", "validation"]),
+  kind: zod.enum([
+    "aigenie",
+    "difficulty",
+    "irt",
+    "validation",
+    "sample_design",
+  ]),
   summary: zod.string(),
   metricsJson: zod.record(zod.string(), zod.unknown()).optional(),
   createdAt: zod.coerce.date(),

@@ -55,6 +55,7 @@ export const ActivityEntryStage = {
   aigenie: "aigenie",
   difficulty: "difficulty",
   irt: "irt",
+  sample_design: "sample_design",
 } as const;
 
 export interface ActivityEntry {
@@ -259,6 +260,89 @@ export interface IrtRunInput {
   params: IrtParams;
 }
 
+export type SampleDesignParamsStrataItem = {
+  /** @minLength 1 */
+  label: string;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  populationShare: number;
+  /**
+   * Optional already-collected N per stratum (for weight calc)
+   * @minimum 0
+   * @nullable
+   */
+  sampledN?: number | null;
+};
+
+/**
+ * Stage 5 — sample design parameters (post-stratification + item info)
+ */
+export interface SampleDesignParams {
+  /**
+   * @minimum 30
+   * @maximum 100000
+   */
+  targetSampleN: number;
+  /**
+   * @minimum 0.05
+   * @maximum 1
+   */
+  targetThetaSE: number;
+  /**
+   * Population strata with target population shares (must sum to ~1)
+   * @minItems 1
+   */
+  strata: SampleDesignParamsStrataItem[];
+  /**
+   * Number of items to keep in the high-information shortlist
+   * @minimum 5
+   * @maximum 500
+   * @nullable
+   */
+  shortlistMaxItems?: number | null;
+}
+
+export interface SampleDesignRunInput {
+  params: SampleDesignParams;
+}
+
+export type JobLogEventType =
+  (typeof JobLogEventType)[keyof typeof JobLogEventType];
+
+export const JobLogEventType = {
+  progress: "progress",
+  log: "log",
+} as const;
+
+/**
+ * @nullable
+ */
+export type JobLogEventLevel =
+  | (typeof JobLogEventLevel)[keyof typeof JobLogEventLevel]
+  | null;
+
+export const JobLogEventLevel = {
+  info: "info",
+  warn: "warn",
+  error: "error",
+} as const;
+
+export interface JobLogEvent {
+  type: JobLogEventType;
+  ts: string;
+  message: string;
+  /**
+   * @minimum 0
+   * @maximum 1
+   * @nullable
+   */
+  progress?: number | null;
+  /** @nullable */
+  level?: JobLogEventLevel;
+}
+
 export type PipelineJobStage =
   (typeof PipelineJobStage)[keyof typeof PipelineJobStage];
 
@@ -266,6 +350,7 @@ export const PipelineJobStage = {
   aigenie: "aigenie",
   difficulty: "difficulty",
   irt: "irt",
+  sample_design: "sample_design",
 } as const;
 
 export type PipelineJobStatus =
@@ -318,6 +403,7 @@ export const PipelineOverviewStagesItemStage = {
   aigenie: "aigenie",
   difficulty: "difficulty",
   irt: "irt",
+  sample_design: "sample_design",
 } as const;
 
 export type PipelineOverviewStagesItemStatus =
@@ -407,6 +493,7 @@ export const ReportKind = {
   difficulty: "difficulty",
   irt: "irt",
   validation: "validation",
+  sample_design: "sample_design",
 } as const;
 
 export type ReportMetricsJson = { [key: string]: unknown };
@@ -450,6 +537,7 @@ export const ListPipelineJobsStage = {
   aigenie: "aigenie",
   difficulty: "difficulty",
   irt: "irt",
+  sample_design: "sample_design",
 } as const;
 
 export type ListReportsParams = {

@@ -1,0 +1,30 @@
+{pkgs}: {
+  deps = [
+    pkgs.libxml2
+    pkgs.pkg-config
+    pkgs.openssl
+    pkgs.curl
+    pkgs.uv
+    pkgs.rPackages.rappdirs
+    pkgs.rPackages.proxy
+    pkgs.rPackages.RcppEigen
+    pkgs.rPackages.lavaan
+    pkgs.rPackages.psych
+    pkgs.rPackages.GPArotation
+    pkgs.rPackages.numDeriv
+    pkgs.rPackages.lme4
+    pkgs.rPackages.RcppArmadillo
+    pkgs.rPackages.Rcpp
+    pkgs.rPackages.Matrix
+    pkgs.rPackages.survival
+    pkgs.rPackages.reticulate
+    pkgs.rPackages.jsonlite
+    pkgs.rPackages.patchwork
+    pkgs.rPackages.ggplot2
+    pkgs.rPackages.glasso
+    pkgs.rPackages.qgraph
+    pkgs.rPackages.igraph
+    pkgs.rPackages.randomForest
+    pkgs.rPackages.glmnet
+  ];
+}

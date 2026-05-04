@@ -115,7 +115,7 @@ router.delete("/projects/:id", async (req, res) => {
 
 router.get("/projects/:id/pipeline", async (req, res) => {
   const { id } = GetProjectPipelineParams.parse(req.params);
-  const stages = ["aigenie", "difficulty", "irt"] as const;
+  const stages = ["aigenie", "difficulty", "irt", "sample_design"] as const;
   const results = await Promise.all(
     stages.map(async (stage) => {
       const jobs = await db.query.pipelineJobsTable.findMany({

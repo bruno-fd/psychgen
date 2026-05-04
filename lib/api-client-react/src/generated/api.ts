@@ -27,6 +27,7 @@ import type {
   HealthStatus,
   IrtRunInput,
   Item,
+  JobLogEvent,
   ListPipelineJobsParams,
   ListReportsParams,
   NotFoundResponse,
@@ -34,6 +35,7 @@ import type {
   PipelineOverview,
   Project,
   Report,
+  SampleDesignRunInput,
   UpdateItemInput,
   UpdateProjectInput,
 } from "./api.schemas";
@@ -1390,6 +1392,267 @@ export const useRunIrtStage = <
 > => {
   return useMutation(getRunIrtStageMutationOptions(options));
 };
+
+/**
+ * @summary Stage 5 — sample design (post-stratification weights + item shortlist)
+ */
+export const getRunSampleDesignStageUrl = (id: number) => {
+  return `/api/projects/${id}/runs/sample-design`;
+};
+
+export const runSampleDesignStage = async (
+  id: number,
+  sampleDesignRunInput: SampleDesignRunInput,
+  options?: RequestInit,
+): Promise<PipelineJob> => {
+  return customFetch<PipelineJob>(getRunSampleDesignStageUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sampleDesignRunInput),
+  });
+};
+
+export const getRunSampleDesignStageMutationOptions = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runSampleDesignStage>>,
+    TError,
+    { id: number; data: BodyType<SampleDesignRunInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runSampleDesignStage>>,
+  TError,
+  { id: number; data: BodyType<SampleDesignRunInput> },
+  TContext
+> => {
+  const mutationKey = ["runSampleDesignStage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runSampleDesignStage>>,
+    { id: number; data: BodyType<SampleDesignRunInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return runSampleDesignStage(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunSampleDesignStageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runSampleDesignStage>>
+>;
+export type RunSampleDesignStageMutationBody = BodyType<SampleDesignRunInput>;
+export type RunSampleDesignStageMutationError = ErrorType<BadRequestResponse>;
+
+/**
+ * @summary Stage 5 — sample design (post-stratification weights + item shortlist)
+ */
+export const useRunSampleDesignStage = <
+  TError = ErrorType<BadRequestResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runSampleDesignStage>>,
+    TError,
+    { id: number; data: BodyType<SampleDesignRunInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runSampleDesignStage>>,
+  TError,
+  { id: number; data: BodyType<SampleDesignRunInput> },
+  TContext
+> => {
+  return useMutation(getRunSampleDesignStageMutationOptions(options));
+};
+
+/**
+ * @summary Export full project workbook (items + calibrations + Wright map data) as XLSX
+ */
+export const getExportProjectXlsxUrl = (id: number) => {
+  return `/api/projects/${id}/export.xlsx`;
+};
+
+export const exportProjectXlsx = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getExportProjectXlsxUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportProjectXlsxQueryKey = (id: number) => {
+  return [`/api/projects/${id}/export.xlsx`] as const;
+};
+
+export const getExportProjectXlsxQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportProjectXlsx>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportProjectXlsx>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getExportProjectXlsxQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportProjectXlsx>>
+  > = ({ signal }) => exportProjectXlsx(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportProjectXlsx>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportProjectXlsxQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportProjectXlsx>>
+>;
+export type ExportProjectXlsxQueryError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Export full project workbook (items + calibrations + Wright map data) as XLSX
+ */
+
+export function useExportProjectXlsx<
+  TData = Awaited<ReturnType<typeof exportProjectXlsx>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportProjectXlsx>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportProjectXlsxQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Recent log + progress events for a job (REST snapshot of the SSE stream)
+ */
+export const getGetPipelineJobLogsUrl = (id: number) => {
+  return `/api/pipeline/jobs/${id}/logs`;
+};
+
+export const getPipelineJobLogs = async (
+  id: number,
+  options?: RequestInit,
+): Promise<JobLogEvent[]> => {
+  return customFetch<JobLogEvent[]>(getGetPipelineJobLogsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPipelineJobLogsQueryKey = (id: number) => {
+  return [`/api/pipeline/jobs/${id}/logs`] as const;
+};
+
+export const getGetPipelineJobLogsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPipelineJobLogs>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPipelineJobLogs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPipelineJobLogsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPipelineJobLogs>>
+  > = ({ signal }) => getPipelineJobLogs(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPipelineJobLogs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPipelineJobLogsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPipelineJobLogs>>
+>;
+export type GetPipelineJobLogsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Recent log + progress events for a job (REST snapshot of the SSE stream)
+ */
+
+export function useGetPipelineJobLogs<
+  TData = Awaited<ReturnType<typeof getPipelineJobLogs>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPipelineJobLogs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPipelineJobLogsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getGetItemUrl = (id: number) => {
   return `/api/items/${id}`;

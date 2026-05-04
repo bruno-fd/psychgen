@@ -13,4 +13,5 @@ export const ListPipelineJobsStage = {
   aigenie: "aigenie",
   difficulty: "difficulty",
   irt: "irt",
+  sample_design: "sample_design",
 } as const;
