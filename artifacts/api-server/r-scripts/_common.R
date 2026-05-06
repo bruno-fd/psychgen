@@ -73,8 +73,26 @@ progress <- function(p, message = "") {
   }
 }
 
-.openai_url  <- function(path) paste0(Sys.getenv("OPENAI_BASE_URL",  unset = "https://api.openai.com/v1"),  path)
-.anthropic_url <- function(path) paste0(Sys.getenv("ANTHROPIC_BASE_URL", unset = "https://api.anthropic.com/v1"), path)
+.openai_key <- function() {
+  k <- Sys.getenv("AI_INTEGRATIONS_OPENAI_API_KEY")
+  if (k != "") return(k)
+  Sys.getenv("OPENAI_API_KEY")
+}
+.anthropic_key <- function() {
+  k <- Sys.getenv("AI_INTEGRATIONS_ANTHROPIC_API_KEY")
+  if (k != "") return(k)
+  Sys.getenv("ANTHROPIC_API_KEY")
+}
+.openai_url <- function(path) {
+  base <- Sys.getenv("AI_INTEGRATIONS_OPENAI_BASE_URL")
+  if (base == "") base <- Sys.getenv("OPENAI_BASE_URL", unset = "https://api.openai.com/v1")
+  paste0(sub("/+$", "", base), path)
+}
+.anthropic_url <- function(path) {
+  base <- Sys.getenv("AI_INTEGRATIONS_ANTHROPIC_BASE_URL")
+  if (base == "") base <- Sys.getenv("ANTHROPIC_BASE_URL", unset = "https://api.anthropic.com/v1")
+  paste0(sub("/+$", "", base), path)
+}
 
 #' Chat completion in R via httr2. Routes to Anthropic for claude-* models.
 #' @param model      model id
@@ -89,8 +107,8 @@ chat_complete <- function(model, messages,
   .require_httr2()
 
   if (.is_anthropic(model)) {
-    key <- Sys.getenv("ANTHROPIC_API_KEY")
-    if (key == "") stop("ANTHROPIC_API_KEY not set")
+    key <- .anthropic_key()
+    if (key == "") stop("Anthropic API key not set (AI_INTEGRATIONS_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY)")
     sys_msgs <- Filter(function(m) identical(m$role, "system"), messages)
     other    <- Filter(function(m) !identical(m$role, "system"), messages)
     body <- list(
@@ -119,8 +137,8 @@ chat_complete <- function(model, messages,
   }
 
   # OpenAI (default)
-  key <- Sys.getenv("OPENAI_API_KEY")
-  if (key == "") stop("OPENAI_API_KEY not set")
+  key <- .openai_key()
+  if (key == "") stop("OpenAI API key not set (AI_INTEGRATIONS_OPENAI_API_KEY or OPENAI_API_KEY)")
   body <- list(
     model       = model,
     temperature = temperature,
@@ -145,8 +163,8 @@ chat_complete <- function(model, messages,
 #' Embeddings via OpenAI in R. Returns a numeric matrix [n_inputs x dim].
 embeddings <- function(model, inputs) {
   .require_httr2()
-  key <- Sys.getenv("OPENAI_API_KEY")
-  if (key == "") stop("OPENAI_API_KEY not set")
+  key <- .openai_key()
+  if (key == "") stop("OpenAI API key not set (AI_INTEGRATIONS_OPENAI_API_KEY or OPENAI_API_KEY)")
   if (length(inputs) == 0) return(matrix(numeric(0), nrow = 0, ncol = 0))
 
   # Batch in chunks of 100 so we don't hit token limits per request.
