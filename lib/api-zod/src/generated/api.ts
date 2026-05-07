@@ -8,9 +8,19 @@
 import * as zod from "zod";
 
 /**
- * Returns server health status (DB, R runtime, AI providers)
+ * Returns server health status (DB, R runtime, AI providers).
+With `deep=1`, also spawns Rscript to report R version and
+installed package versions (~2s overhead).
+
  * @summary Health check
  */
+export const HealthCheckQueryParams = zod.object({
+  deep: zod
+    .enum(["1"])
+    .optional()
+    .describe("Pass `1` to include R runtime + package list."),
+});
+
 export const HealthCheckResponse = zod.object({
   status: zod.enum(["ok", "degraded"]),
   db: zod.enum(["ok", "error"]),

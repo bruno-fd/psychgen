@@ -28,7 +28,16 @@ paths:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status (DB, R runtime, AI providers)
+      description: |
+        Returns server health status (DB, R runtime, AI providers).
+        With `deep=1`, also spawns Rscript to report R version and
+        installed package versions (~2s overhead).
+      parameters:
+        - name: deep
+          in: query
+          required: false
+          description: Pass `1` to include R runtime + package list.
+          schema: { type: string, enum: ["1"] }
       responses:
         "200":
           description: Healthy

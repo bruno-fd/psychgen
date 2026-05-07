@@ -21,7 +21,7 @@ export default function Dashboard() {
   const { data: summary, isLoading: isLoadingSummary } = useGetDashboardSummary();
   const { data: recentActivity, isLoading: isLoadingActivity } = useGetRecentActivity({ limit: 10 });
   // Pass deep=1 so the dashboard can render the full R package list / version.
-  const { data: health } = useHealthCheck({ query: { deep: "1" } } as never);
+  const { data: health } = useHealthCheck({ deep: "1" });
 
   const apiOk = health?.status === "ok";
   const dbOk = health?.db === "ok";

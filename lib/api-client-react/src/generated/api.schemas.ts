@@ -573,6 +573,20 @@ export type NotFoundResponse = ErrorResponse;
  */
 export type BadRequestResponse = ErrorResponse;
 
+export type HealthCheckParams = {
+  /**
+   * Pass `1` to include R runtime + package list.
+   */
+  deep?: HealthCheckDeep;
+};
+
+export type HealthCheckDeep =
+  (typeof HealthCheckDeep)[keyof typeof HealthCheckDeep];
+
+export const HealthCheckDeep = {
+  NUMBER_1: "1",
+} as const;
+
 export type GetRecentActivityParams = {
   /**
    * @minimum 1

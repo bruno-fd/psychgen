@@ -20,6 +20,8 @@ export * from "./difficultyParamsAlgorithm";
 export * from "./difficultyRunInput";
 export * from "./errorResponse";
 export * from "./getRecentActivityParams";
+export * from "./healthCheckDeep";
+export * from "./healthCheckParams";
 export * from "./healthStatus";
 export * from "./healthStatusAnthropic";
 export * from "./healthStatusDb";
