@@ -8,7 +8,7 @@ import {
 import { eq } from "drizzle-orm";
 import { logger } from "./logger";
 import { type RStreamEvent } from "./r-runner";
-import { runStage as runRScript } from "./r-client";
+import { runScript } from "./r-client";
 
 class JobCancelledError extends Error {
   constructor() {
@@ -121,7 +121,7 @@ export async function enqueueJob(opts: {
     .returning({ id: pipelineJobsTable.id });
   if (!row) throw new Error("Failed to insert job");
   setImmediate(() => {
-    runJob(row.id, opts.projectId, opts.stage, opts.params).catch((err) => {
+    runJob(row.id, opts.projectId, opts.stage, opts.params, opts.scriptR ?? "").catch((err) => {
       logger.error({ err, jobId: row.id }, "Unhandled job error");
     });
   });
@@ -133,7 +133,12 @@ async function runJob(
   projectId: number,
   stage: Stage,
   rawParams: Record<string, unknown>,
+  scriptR: string,
 ): Promise<void> {
+  if (!scriptR) {
+    await fail(jobId, "Generated R script missing for this job (scriptR is empty).");
+    return;
+  }
   await db
     .update(pipelineJobsTable)
     .set({ status: "running", startedAt: new Date(), progress: 0 })
@@ -158,13 +163,13 @@ async function runJob(
       });
       if (!project) throw new Error("Project not found");
 
-      const r = await runRScript<{
+      const r = await runScript<{
         items: { text: string; community: number | null }[];
         rounds: number;
         rejected: number;
         egaSummary: { dimensions: number | null; method: string; n_items: number };
         model: string;
-      }>("stage1_aigenie.R", { construct: project.construct, params }, { onEvent });
+      }>(scriptR, { construct: project.construct, params }, { onEvent, jobId });
       if (!r.ok) throw new Error(r.error);
       checkCancel();
 
@@ -205,7 +210,7 @@ async function runJob(
       const items = await db.query.itemsTable.findMany({
         where: eq(itemsTable.projectId, projectId),
       });
-      const r = await runRScript<{
+      const r = await runScript<{
         predictions: { itemId: number; predicted: number }[];
         cvR2: number | null;
         algorithm: string;
@@ -213,7 +218,7 @@ async function runJob(
         nFeatures: number;
         topFeatures: { feature: string; importance: number }[];
       }>(
-        "stage2_difficulty.R",
+        scriptR,
         {
           items: items.map((it) => ({
             id: it.id,
@@ -222,7 +227,7 @@ async function runJob(
           })),
           params,
         },
-        { onEvent },
+        { onEvent, jobId },
       );
       if (!r.ok) throw new Error(r.error);
       checkCancel();
@@ -268,7 +273,7 @@ async function runJob(
       if (reviewable.length < 2)
         throw new Error("Pelo menos 2 itens válidos são necessários para IRT.");
 
-      const r = await runRScript<{
+      const r = await runScript<{
         calibrations: {
           itemId: number;
           difficulty: number;
@@ -284,13 +289,13 @@ async function runJob(
           binEdges: number[];
         };
       }>(
-        "stage3_irt.R",
+        scriptR,
         {
           construct: project.construct,
           items: reviewable.map((it) => ({ id: it.id, text: it.text })),
           params,
         },
-        { onEvent, timeoutMs: 1000 * 60 * 90 },
+        { onEvent, jobId, timeoutMs: 1000 * 60 * 90 },
       );
       if (!r.ok) throw new Error(r.error);
       checkCancel();
@@ -341,7 +346,7 @@ async function runJob(
           discrimination: it.discrimination,
           guessing: it.guessing,
         }));
-      const r = await runRScript<{
+      const r = await runScript<{
         targetSampleN: number;
         targetThetaSE: number;
         perStratum: {
@@ -361,9 +366,9 @@ async function runJob(
           discrimination: number;
         }[];
       }>(
-        "stage5_sample_design.R",
+        scriptR,
         { ...params, calibratedItems },
-        { onEvent },
+        { onEvent, jobId },
       );
       if (!r.ok) throw new Error(r.error);
       checkCancel();

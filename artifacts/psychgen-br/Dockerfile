@@ -3,6 +3,10 @@ FROM node:24-alpine AS builder
 
 ARG VITE_API_URL=/api
 ENV VITE_API_URL=$VITE_API_URL
+# Required by vite.config.ts at build time. Container runtime does not use them.
+ENV PORT=5173
+ENV BASE_PATH=/
+ENV NODE_ENV=production
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
@@ -23,6 +27,7 @@ RUN pnpm --filter @workspace/psychgen-br run build
 FROM nginx:1.27-alpine AS runtime
 
 COPY artifacts/psychgen-br/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/artifacts/psychgen-br/dist /usr/share/nginx/html
+# vite.config.ts writes to dist/public — copy that, not dist.
+COPY --from=builder /app/artifacts/psychgen-br/dist/public /usr/share/nginx/html
 
 EXPOSE 80

@@ -5,7 +5,7 @@ import { ExportProjectXlsxParams } from "@workspace/api-zod";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readFile, unlink } from "node:fs/promises";
-import { runRScript } from "../lib/r-runner";
+import { runStage } from "../lib/r-client";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -25,7 +25,7 @@ router.get("/projects/:id/export.xlsx", async (req, res) => {
   ]);
 
   const outPath = join(tmpdir(), `psychgen-${id}-${Date.now()}.xlsx`);
-  const r = await runRScript<{ outputPath: string; sheets: string[] }>(
+  const r = await runStage<{ outputPath: string; sheets: string[] }>(
     "export_xlsx.R",
     {
       outputPath: outPath,

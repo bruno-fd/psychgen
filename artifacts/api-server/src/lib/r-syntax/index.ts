@@ -1,11 +1,18 @@
 /**
  * R script preview generator — backend is the source of truth for the
- * R syntax shown in the UI's read-only editor and downloaded as `.R`.
+ * R syntax shown in the UI's read-only editor, downloaded as `.R`, AND
+ * executed by the R engine. The runtime path POSTs the exact script text
+ * to Plumber's /run/script endpoint, so what the user previews is what
+ * actually runs.
  *
- * Each function returns an executable R script equivalent to running the
- * corresponding stage with the given parameters. The script reads/writes
- * to R_INPUT_JSON / R_OUTPUT_JSON exactly like the runtime path, so the
- * user can `Rscript thefile.R` outside the app and reproduce the run.
+ * Each generated script:
+ *   1. Sources `_common.R` (logging + JSON I/O contract).
+ *   2. Declares the form-derived params as a top-level R `list(...)` —
+ *      these are the source of truth; editing them changes behavior.
+ *   3. Reads the runtime payload from `R_INPUT_JSON` (items, project
+ *      metadata, calibrated items, ...), overlays the local params on top,
+ *      writes the merged JSON, then sources the canonical stage script in
+ *      `r-scripts/`.
  */
 export type Stage = "aigenie" | "difficulty" | "irt" | "sample_design";
 
@@ -50,13 +57,28 @@ export interface SampleDesignParams {
 }
 
 const HEADER = `# ============================================================================
-# Gerado automaticamente pelo PsychGen BR — fonte da verdade no backend.
-# Reproduza fora do app:
-#   export R_INPUT_JSON=input.json
+# Gerado automaticamente pelo PsychGen BR — fonte da verdade.
+# Este script é tanto o que você vê no painel "Sintaxe R" quanto o que de fato
+# executa no servidor R. Para reproduzir manualmente:
+#   export R_INPUT_JSON=runtime_payload.json
 #   export R_OUTPUT_JSON=output.json
 #   Rscript este_arquivo.R
 # ============================================================================
 source(file.path(getwd(), "r-scripts", "_common.R"))
+`;
+
+const MERGE_AND_SOURCE = (stageScript: string, overrides: string) => `
+# --- Merge form params into the runtime payload supplied by the API ---------
+inp <- if (Sys.getenv("R_INPUT_JSON") != "" && file.exists(Sys.getenv("R_INPUT_JSON")))
+         jsonlite::fromJSON(Sys.getenv("R_INPUT_JSON"), simplifyVector = FALSE)
+       else
+         list()
+${overrides}
+.merged_path <- tempfile(fileext = ".json")
+writeLines(jsonlite::toJSON(inp, auto_unbox = TRUE, null = "null"), .merged_path)
+Sys.setenv(R_INPUT_JSON = .merged_path)
+
+source(file.path(getwd(), "r-scripts", "${stageScript}"))
 `;
 
 function rString(s: string | undefined | null): string {
@@ -98,15 +120,7 @@ params <- list(
   embeddingModel   = ${rString(p.embeddingModel)},
   egaThreshold     = ${rNum(p.egaThreshold)}
 )
-
-# --- Persiste a entrada e delega ao stage1_aigenie.R ------------------------
-input_path <- Sys.getenv("R_INPUT_JSON", unset = tempfile(fileext = ".json"))
-writeLines(jsonlite::toJSON(list(construct = construct, params = params),
-                             auto_unbox = TRUE), input_path)
-Sys.setenv(R_INPUT_JSON = input_path)
-
-source(file.path(getwd(), "r-scripts", "stage1_aigenie.R"))
-`;
+${MERGE_AND_SOURCE("stage1_aigenie.R", "inp$construct <- construct\ninp$params <- params")}`;
 }
 
 export function generateDifficultyScript(opts: { params: DifficultyParams }): string {
@@ -120,14 +134,7 @@ params <- list(
   embeddingModel       = ${rString(p.embeddingModel)},
   crossValidationFolds = ${rNum(p.crossValidationFolds)}
 )
-
-# Os itens são carregados em runtime pelo backend (com base no projeto).
-# Ao reproduzir manualmente, monte um JSON com:
-#   { items: [ { id, text, difficultyEstimated }, ... ], params: {...} }
-# e aponte R_INPUT_JSON para ele antes de executar.
-
-source(file.path(getwd(), "r-scripts", "stage2_difficulty.R"))
-`;
+${MERGE_AND_SOURCE("stage2_difficulty.R", "inp$params <- params")}`;
 }
 
 export function generateIrtScript(opts: { construct: string; params: IrtParams }): string {
@@ -143,13 +150,7 @@ params <- list(
   temperature    = ${rNum(p.temperature)},
   personaSeed    = ${rString(p.personaSeed || "")}
 )
-
-# Os itens calibráveis são carregados em runtime pelo backend.
-# Ao reproduzir manualmente, monte um JSON com:
-#   { construct, items: [ { id, text }, ... ], params: {...} }
-
-source(file.path(getwd(), "r-scripts", "stage3_irt.R"))
-`;
+${MERGE_AND_SOURCE("stage3_irt.R", "inp$construct <- construct\ninp$params <- params")}`;
 }
 
 export function generateSampleDesignScript(opts: { params: SampleDesignParams }): string {
@@ -171,13 +172,13 @@ shortlistMaxItems <- ${p.shortlistMaxItems == null ? "NULL" : rNum(p.shortlistMa
 strata <- list(
 ${strataR}
 )
-
-# Os itens calibrados (com discriminação/dificuldade/guessing) são carregados
-# em runtime pelo backend a partir do projeto e injetados como
-#   inp$calibratedItems
-
-source(file.path(getwd(), "r-scripts", "stage5_sample_design.R"))
-`;
+${MERGE_AND_SOURCE(
+  "stage5_sample_design.R",
+  `inp$targetSampleN     <- targetSampleN
+inp$targetThetaSE     <- targetThetaSE
+inp$shortlistMaxItems <- shortlistMaxItems
+inp$strata            <- strata`,
+)}`;
 }
 
 export function generateScriptForStage(

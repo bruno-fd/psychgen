@@ -61,9 +61,10 @@ OK: `mirt 1.46.1`, `glmnet 4.1.8`, `randomForest 4.7.1.2`, `quanteda 4.4`, `udpi
 ### Local Docker stack (Tarefa #6 — MVP Windows)
 
 - `docker-compose.yml` orquestra 4 serviços: `postgres` (volume `psychgen_pg_data`), `r-engine` (volumes nomeados `psychgen_r_lib` para `~/.R/library` e `psychgen_r_cache` para `~/.cache/udpipe` — pacotes/modelos persistem entre rebuilds), `api` (Node 24, Express na 3001), `web` (Nginx servindo build estático + proxy `/api/*` → `api:3001` com SSE).
-- `docker/r-engine/Dockerfile` usa `rocker/r-ver:4.4.3`; `install_packages.R` instala via Posit Package Manager snapshot **2025-04-15** (CRAN reproduzível) + AIGENIE do GitHub + cache do modelo udpipe Portuguese-Bosque.
-- `docker/r-engine/plumber.R` expõe POST `/run/{aigenie,difficulty,irt,sample-design,export-xlsx}` + `GET /healthz` na porta 8000.
-- API server detecta `R_ENGINE_URL` (HTTP→Plumber dentro do compose) e cai para subprocesso local `Rscript` quando ausente (modo dev Replit). Veja `artifacts/api-server/src/lib/r-client.ts`.
+- `docker/r-engine/Dockerfile` usa `rocker/r-ver:4.4.3`; `install_packages.R` instala via Posit Package Manager snapshot **2025-04-15** (CRAN reproduzível) + cache do modelo udpipe Portuguese-Bosque. **AIGENIE é opt-in** via build arg `INSTALL_AIGENIE_REF` (commit SHA ou tag — `HEAD`/`main` são rejeitados); quando ausente, `stage1_aigenie.R` usa fallback `igraph::cluster_louvain`.
+- `docker/r-engine/plumber.R` expõe `POST /run/script` (rota primária — recebe `{ script, payload, jobId }` e executa o R gerado pelo backend) + endpoints de stage para debug + `GET /healthz`. Porta 8000 é **interna apenas** (não publicada no host).
+- API server detecta `R_ENGINE_URL` (HTTP→Plumber dentro do compose) e cai para subprocesso local `Rscript` quando ausente (modo dev Replit). `runScript(scriptR, payload, { jobId })` em `artifacts/api-server/src/lib/r-client.ts` é o caminho real de execução — o mesmo script que o usuário previu/baixou é o que roda.
+- **Live progress streaming**: volume nomeado `psychgen_jobs_logs` montado em `/srv/jobs-logs` em `r-engine` e `api`. Plumber `sink()` redireciona stdout/stderr para `{jobId}.ndjson`; `r-client` faz tail (poll 200 ms) das linhas `PSYCHGEN_PROGRESS`/`PSYCHGEN_LOG` e as encaminha como SSE.
 - Migração para VPS: copiar repo + `.env` + executar `docker compose up -d`. Backup com `docker exec psychgen-postgres pg_dump …`. Detalhes em `README.md`.
 
 ### R syntax preview (UI)

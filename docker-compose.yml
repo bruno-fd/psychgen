@@ -21,6 +21,11 @@ services:
     build:
       context: ./docker/r-engine
       dockerfile: Dockerfile
+      args:
+        # Opt-in: leave empty to skip AIGENIE install. To enable, set this to
+        # an immutable git ref (commit SHA or tag) — never use "HEAD"/"main"
+        # in production builds.
+        INSTALL_AIGENIE_REF: ${INSTALL_AIGENIE_REF:-}
     container_name: psychgen_r_engine
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -30,6 +35,7 @@ services:
       AI_INTEGRATIONS_ANTHROPIC_API_KEY: ${AI_INTEGRATIONS_ANTHROPIC_API_KEY:-}
       AI_INTEGRATIONS_ANTHROPIC_BASE_URL: ${AI_INTEGRATIONS_ANTHROPIC_BASE_URL:-}
       R_LIBS_USER: /home/r/.R/library-4.4
+      JOBS_LOG_DIR: /srv/jobs-logs
     volumes:
       # Persistent CRAN library — packages survive `docker compose down`.
       - psychgen_r_lib:/home/r/.R/library-4.4
@@ -37,10 +43,12 @@ services:
       - psychgen_r_cache:/home/r/.cache
       # Mount the R scripts read-only so editing them doesn't require rebuild.
       - ./artifacts/api-server/r-scripts:/srv/r-scripts:ro
-    ports:
-      # Optional — exposed for direct curl debugging. Internal traffic uses
-      # the docker network on `r-engine:8000`.
-      - "${R_ENGINE_PORT:-8000}:8000"
+      # Live log channel: r-engine writes per-job NDJSON, api-server tails it.
+      - psychgen_jobs_logs:/srv/jobs-logs
+    # NOTE: deliberately NOT publishing port 8000 to the host. The R engine is
+    # internal-only — the API container is the sole external entrypoint.
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 10s
@@ -59,6 +67,7 @@ services:
       PORT: 3001
       DATABASE_URL: postgres://${POSTGRES_USER:-psychgen}:${POSTGRES_PASSWORD:-psychgen}@postgres:5432/${POSTGRES_DB:-psychgen}
       R_ENGINE_URL: http://r-engine:8000
+      JOBS_LOG_DIR: /srv/jobs-logs
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_INTEGRATIONS_OPENAI_API_KEY: ${AI_INTEGRATIONS_OPENAI_API_KEY:-}
@@ -72,6 +81,10 @@ services:
         condition: service_healthy
     ports:
       - "${API_PORT:-3001}:3001"
+    volumes:
+      # Same shared volume as r-engine — used to tail per-job NDJSON logs and
+      # forward them to the SSE clients (live progress streaming).
+      - psychgen_jobs_logs:/srv/jobs-logs
     restart: unless-stopped
 
   web:
@@ -91,3 +104,4 @@ volumes:
   psychgen_pg_data:
   psychgen_r_lib:
   psychgen_r_cache:
+  psychgen_jobs_logs:
