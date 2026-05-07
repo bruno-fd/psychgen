@@ -44,18 +44,16 @@ A primeira build leva **15–30 minutos** porque o container `r-engine` compila
 todos os pacotes do CRAN (mirt, EGAnet, udpipe, quanteda, etc.) a partir do
 fonte. As builds seguintes são instantâneas (camadas em cache).
 
-Aplique o schema do banco (uma única vez por máquina):
-
-```bash
-docker compose exec api pnpm --filter @workspace/db run db:push
-```
+> O schema do banco é aplicado **automaticamente** no boot do container `api`
+> (entrypoint roda `drizzle-kit push --force` antes do `node`). Não é
+> preciso rodar nada manualmente após o `up -d`.
 
 Acesse:
 
 | Serviço     | URL                       |
 |-------------|---------------------------|
 | Web (UI)    | http://localhost:5173     |
-| API REST    | http://localhost:3001/api |
+| API REST    | http://localhost:8080/api |
 | Postgres    | localhost:5432            |
 
 > O **R engine** (Plumber em `r-engine:8000`) é proposital­mente acessível
@@ -67,7 +65,7 @@ Acesse:
 
 ```bash
 # Health completo (DB + AI keys + versão do R + pacotes instalados):
-curl 'http://localhost:3001/api/healthz?deep=1' | jq
+curl 'http://localhost:8080/api/healthz?deep=1' | jq
 
 # R engine direto (de dentro do container, já que a porta não é exposta):
 docker compose exec r-engine curl -s http://localhost:8000/healthz | jq
@@ -136,8 +134,8 @@ Como tudo é declarado em `docker-compose.yml`, a migração é trivial:
 3. `cp .env.example .env` e ajuste senhas + chaves de API.
 4. (Opcional) Coloque `nginx` ou Caddy na frente para HTTPS — aponte para
    `localhost:5173`.
-5. `docker compose up -d --build`.
-6. `docker compose exec api pnpm --filter @workspace/db run db:push`.
+5. `docker compose up -d --build` (o entrypoint da `api` aplica o schema
+   do banco automaticamente).
 
 Backup do banco:
 

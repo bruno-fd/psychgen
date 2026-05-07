@@ -64,7 +64,7 @@ services:
     container_name: psychgen_api
     environment:
       NODE_ENV: production
-      PORT: 3001
+      PORT: 8080
       DATABASE_URL: postgres://${POSTGRES_USER:-psychgen}:${POSTGRES_PASSWORD:-psychgen}@postgres:5432/${POSTGRES_DB:-psychgen}
       R_ENGINE_URL: http://r-engine:8000
       JOBS_LOG_DIR: /srv/jobs-logs
@@ -80,13 +80,13 @@ services:
       r-engine:
         condition: service_healthy
     ports:
-      - "${API_PORT:-3001}:3001"
+      - "${API_PORT:-8080}:8080"
     volumes:
       # Same shared volume as r-engine — used to tail per-job NDJSON logs and
       # forward them to the SSE clients (live progress streaming).
       - psychgen_jobs_logs:/srv/jobs-logs
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/healthz >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/healthz >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10

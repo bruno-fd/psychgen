@@ -35,11 +35,16 @@ COPY --from=builder /app/artifacts/api-server/package.json ./artifacts/api-serve
 COPY --from=builder /app/artifacts/api-server/dist ./artifacts/api-server/dist
 COPY --from=builder /app/artifacts/api-server/r-scripts ./artifacts/api-server/r-scripts
 
-# Install only production deps for runtime
-RUN pnpm install --frozen-lockfile --prod
+# Full install (not --prod) so drizzle-kit (devDependency of @workspace/db) is
+# available for the automatic schema push performed by entrypoint.sh on boot.
+RUN pnpm install --frozen-lockfile
 
-EXPOSE 3001
+COPY artifacts/api-server/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+EXPOSE 8080
 
 WORKDIR /app/artifacts/api-server
 
-CMD ["node", "dist/index.js"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["node", "dist/index.mjs"]
