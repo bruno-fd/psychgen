@@ -12,11 +12,25 @@ import * as zod from "zod";
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
-  status: zod.string(),
-  db: zod.string().optional(),
-  rRuntime: zod.string().optional(),
-  openai: zod.string().optional(),
-  anthropic: zod.string().optional(),
+  status: zod.enum(["ok", "degraded"]),
+  db: zod.enum(["ok", "error"]),
+  openai: zod.enum(["configured", "missing"]),
+  anthropic: zod.enum(["configured", "missing"]),
+  rEngine: zod.object({
+    mode: zod.enum(["http", "subprocess"]),
+    rVersion: zod.string().nullish(),
+    aigenieAvailable: zod.boolean().nullish(),
+    udpipeModelCached: zod.boolean().nullish(),
+    error: zod.string().nullish(),
+    skipped: zod.boolean().nullish(),
+    packages: zod.array(
+      zod.object({
+        name: zod.string(),
+        available: zod.boolean(),
+        version: zod.string().nullish(),
+      }),
+    ),
+  }),
 });
 
 /**

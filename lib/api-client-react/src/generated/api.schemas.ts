@@ -5,12 +5,68 @@
  * PsychGen BR — AI-driven psychometric instrument development
  * OpenAPI spec version: 0.1.0
  */
+export type HealthStatusStatus =
+  (typeof HealthStatusStatus)[keyof typeof HealthStatusStatus];
+
+export const HealthStatusStatus = {
+  ok: "ok",
+  degraded: "degraded",
+} as const;
+
+export type HealthStatusDb =
+  (typeof HealthStatusDb)[keyof typeof HealthStatusDb];
+
+export const HealthStatusDb = {
+  ok: "ok",
+  error: "error",
+} as const;
+
+export type HealthStatusOpenai =
+  (typeof HealthStatusOpenai)[keyof typeof HealthStatusOpenai];
+
+export const HealthStatusOpenai = {
+  configured: "configured",
+  missing: "missing",
+} as const;
+
+export type HealthStatusAnthropic =
+  (typeof HealthStatusAnthropic)[keyof typeof HealthStatusAnthropic];
+
+export const HealthStatusAnthropic = {
+  configured: "configured",
+  missing: "missing",
+} as const;
+
+export type HealthStatusREngineMode =
+  (typeof HealthStatusREngineMode)[keyof typeof HealthStatusREngineMode];
+
+export const HealthStatusREngineMode = {
+  http: "http",
+  subprocess: "subprocess",
+} as const;
+
+export type HealthStatusREnginePackagesItem = {
+  name: string;
+  available: boolean;
+  version?: string | null;
+};
+
+export type HealthStatusREngine = {
+  mode: HealthStatusREngineMode;
+  rVersion?: string | null;
+  aigenieAvailable?: boolean | null;
+  udpipeModelCached?: boolean | null;
+  error?: string | null;
+  skipped?: boolean | null;
+  packages: HealthStatusREnginePackagesItem[];
+};
+
 export interface HealthStatus {
-  status: string;
-  db?: string;
-  rRuntime?: string;
-  openai?: string;
-  anthropic?: string;
+  status: HealthStatusStatus;
+  db: HealthStatusDb;
+  openai: HealthStatusOpenai;
+  anthropic: HealthStatusAnthropic;
+  rEngine: HealthStatusREngine;
 }
 
 export interface ErrorResponse {

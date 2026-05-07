@@ -56,14 +56,21 @@ Acesse:
 |-------------|---------------------------|
 | Web (UI)    | http://localhost:5173     |
 | API REST    | http://localhost:3001/api |
-| R engine    | http://localhost:8000     |
 | Postgres    | localhost:5432            |
+
+> O **R engine** (Plumber em `r-engine:8000`) é proposital­mente acessível
+> apenas pela rede interna do Docker — a API é o único ponto de entrada
+> externo. Para inspecioná-lo diretamente, use `docker compose exec`
+> conforme abaixo.
 
 ### Verificando saúde
 
 ```bash
-curl http://localhost:8000/healthz | jq          # R + pacotes
-curl http://localhost:3001/api/healthz?deep=1    # API + DB + R via HTTP
+# Health completo (DB + AI keys + versão do R + pacotes instalados):
+curl 'http://localhost:3001/api/healthz?deep=1' | jq
+
+# R engine direto (de dentro do container, já que a porta não é exposta):
+docker compose exec r-engine curl -s http://localhost:8000/healthz | jq
 ```
 
 ### Comandos úteis
@@ -156,13 +163,22 @@ Para alterar a UI ou a API durante desenvolvimento, rode-as fora do Docker
 e aponte para os serviços containerizados:
 
 ```bash
-# Banco + R rodando em containers
-docker compose up -d postgres r-engine
+# Banco rodando em container; R rodando local (subprocess fallback)
+docker compose up -d postgres
 
-# API e Web no host
+# API e Web no host. Sem R_ENGINE_URL o api-server cai para Rscript local.
 DATABASE_URL=postgres://psychgen:psychgen@localhost:5432/psychgen \
-R_ENGINE_URL=http://localhost:8000 \
 pnpm --filter @workspace/api-server run dev
 
 pnpm --filter @workspace/psychgen-br run dev
+
+# Para desenvolver contra o r-engine via HTTP, exponha a porta 8000
+# temporariamente adicionando em docker-compose.override.yml:
+#
+#   services:
+#     r-engine:
+#       ports:
+#         - "8000:8000"
+#
+# e então rode com R_ENGINE_URL=http://localhost:8000 pnpm ... dev
 ```

@@ -1,6 +1,6 @@
 # ============================================================================
 # PsychGen BR — R package install (run at image build time).
-# Pinned CRAN snapshot for reproducibility (Posit PPM 2025-04-15).
+# Pinned CRAN snapshot (Posit PPM 2025-04-15) for reproducibility.
 # ============================================================================
 options(
   repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/jammy/2025-04-15"),
@@ -20,14 +20,18 @@ cran_pkgs <- c(
   "Matrix", "glmnet", "randomForest",
   # Psychometrics
   "psych", "lavaan", "mirt",
-  # Networks / EGA
+  # Networks / EGA (bootEGA ships with EGAnet)
   "igraph", "qgraph", "EGAnet",
+  # SEM plotting
+  "semPlot",
   # NLP (PT-BR)
   "udpipe", "quanteda",
   # Excel export
   "openxlsx",
-  # Plotting (semPlot wants these transitively)
-  "ggplot2"
+  # Plotting (semPlot transitive)
+  "ggplot2",
+  # remotes (used for AIGENIE install below)
+  "remotes"
 )
 
 for (p in cran_pkgs) {
@@ -41,31 +45,38 @@ for (p in cran_pkgs) {
     stop(sprintf("Failed to install %s", p))
 }
 
-# AIGENIE is OPT-IN and must be pinned to an immutable git ref (commit SHA or
-# tag) for reproducibility. To enable, set INSTALL_AIGENIE_REF in the
-# docker-compose `.env` to a specific commit SHA — never use "HEAD" or branch
-# names in production builds. When unset, AIGENIE is skipped and the
-# R-native fallback in stage1_aigenie.R is used.
-aigenie_ref <- Sys.getenv("INSTALL_AIGENIE_REF", unset = "")
-if (nzchar(aigenie_ref)) {
-  if (aigenie_ref %in% c("HEAD", "main", "master")) {
-    stop(sprintf(
-      "INSTALL_AIGENIE_REF must be an immutable ref (commit SHA or tag), got: %s",
-      aigenie_ref
-    ))
-  }
-  cat(">>> Installing AIGENIE from GitHub @", aigenie_ref, "\n", sep = "")
-  if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
-  remotes::install_github("hfgolino/AIGENIE",
-                          ref = aigenie_ref,
-                          upgrade = "never")
-  if (!requireNamespace("AIGENIE", quietly = TRUE)) {
-    stop("AIGENIE install failed")
-  }
+# ----------------------------------------------------------------------------
+# AIGENIE — installed BY DEFAULT from a pinned git ref (commit SHA or tag).
+# Override the SHA in `.env` via INSTALL_AIGENIE_REF if you need a newer
+# upstream commit. Branch refs ("HEAD", "main", "master") are rejected to
+# guarantee build reproducibility. The install is best-effort: if the SHA
+# becomes unavailable upstream, stage1_aigenie.R falls back to
+# `igraph::cluster_louvain` so the pipeline still works.
+# ----------------------------------------------------------------------------
+DEFAULT_AIGENIE_REF <- "ff19571a6cd64e36f9ed3f6a4aa0aa5a4c9b0a2c"
+aigenie_ref <- Sys.getenv("INSTALL_AIGENIE_REF", unset = DEFAULT_AIGENIE_REF)
+
+if (aigenie_ref %in% c("HEAD", "main", "master")) {
+  stop(sprintf(
+    "INSTALL_AIGENIE_REF must be an immutable commit SHA or tag (got: %s).",
+    aigenie_ref
+  ))
+}
+
+if (!requireNamespace("AIGENIE", quietly = TRUE)) {
+  cat(">>> Installing AIGENIE from GitHub @ ", aigenie_ref, "\n", sep = "")
+  tryCatch(
+    remotes::install_github("hfgolino/AIGENIE",
+                            ref     = aigenie_ref,
+                            upgrade = "never"),
+    error = function(e) {
+      cat("WARN: AIGENIE install failed at ref=", aigenie_ref,
+          " (non-fatal — pipeline will use igraph::cluster_louvain fallback): ",
+          conditionMessage(e), "\n", sep = "")
+    }
+  )
 } else {
-  cat(">>> AIGENIE skipped (INSTALL_AIGENIE_REF not set). ",
-      "stage1_aigenie.R will use the igraph::cluster_louvain fallback.\n",
-      sep = "")
+  cat("  [skip] AIGENIE already installed\n")
 }
 
 # Pre-download the udpipe Portuguese-Bosque model into the cache volume.

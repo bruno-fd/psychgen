@@ -463,13 +463,43 @@ components:
   schemas:
     HealthStatus:
       type: object
-      required: [status]
+      required: [status, db, openai, anthropic, rEngine]
       properties:
-        status: { type: string }
-        db: { type: string }
-        rRuntime: { type: string }
-        openai: { type: string }
-        anthropic: { type: string }
+        status: { type: string, enum: [ok, degraded] }
+        db: { type: string, enum: [ok, error] }
+        openai: { type: string, enum: [configured, missing] }
+        anthropic: { type: string, enum: [configured, missing] }
+        rEngine:
+          type: object
+          required: [mode, packages]
+          properties:
+            mode: { type: string, enum: [http, subprocess] }
+            rVersion:
+              type: string
+              nullable: true
+            aigenieAvailable:
+              type: boolean
+              nullable: true
+            udpipeModelCached:
+              type: boolean
+              nullable: true
+            error:
+              type: string
+              nullable: true
+            skipped:
+              type: boolean
+              nullable: true
+            packages:
+              type: array
+              items:
+                type: object
+                required: [name, available]
+                properties:
+                  name: { type: string }
+                  available: { type: boolean }
+                  version:
+                    type: string
+                    nullable: true
 
     ErrorResponse:
       type: object

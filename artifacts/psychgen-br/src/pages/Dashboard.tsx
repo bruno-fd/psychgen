@@ -1,14 +1,33 @@
 import { useGetDashboardSummary, useGetRecentActivity, useHealthCheck } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { formatDate, formatBrlNumber } from "@/lib/formatters";
-import { Activity, Database, Server, CheckCircle2, XCircle, AlertCircle, FileText, ActivitySquare, FolderKanban } from "lucide-react";
+import {
+  Activity, Database, Server, CheckCircle2, XCircle, AlertCircle,
+  FileText, ActivitySquare, FolderKanban, Boxes,
+} from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
+
+function StatusDot({ ok }: { ok: boolean }) {
+  return (
+    <span
+      className={`w-2 h-2 rounded-full ${ok ? "bg-green-500" : "bg-destructive"}`}
+    />
+  );
+}
 
 export default function Dashboard() {
   const { data: summary, isLoading: isLoadingSummary } = useGetDashboardSummary();
   const { data: recentActivity, isLoading: isLoadingActivity } = useGetRecentActivity({ limit: 10 });
-  const { data: health } = useHealthCheck();
+  // Pass deep=1 so the dashboard can render the full R package list / version.
+  const { data: health } = useHealthCheck({ query: { deep: "1" } } as never);
+
+  const apiOk = health?.status === "ok";
+  const dbOk = health?.db === "ok";
+  const rEngine = health?.rEngine;
+  const rOk = !!rEngine && !rEngine.error && (rEngine.packages?.length ?? 0) > 0
+    && (rEngine.packages ?? []).every((p) => p.available);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -19,22 +38,76 @@ export default function Dashboard() {
 
       {/* Health Status Bar */}
       {health && (
-        <div className="flex gap-4 p-3 bg-card border rounded-lg text-sm">
-          <div className="flex items-center gap-2">
-            <Server className="h-4 w-4 text-muted-foreground" />
-            <span className="font-mono text-xs">API:</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> {health.status}</span>
+        <div className="space-y-3 p-3 bg-card border rounded-lg text-sm">
+          <div className="flex flex-wrap gap-4">
+            <div className="flex items-center gap-2">
+              <Server className="h-4 w-4 text-muted-foreground" />
+              <span className="font-mono text-xs">API:</span>
+              <span className="flex items-center gap-1"><StatusDot ok={apiOk} /> {health.status}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Database className="h-4 w-4 text-muted-foreground" />
+              <span className="font-mono text-xs">DB:</span>
+              <span className="flex items-center gap-1"><StatusDot ok={dbOk} /> {health.db}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-muted-foreground" />
+              <span className="font-mono text-xs">R engine:</span>
+              <span className="flex items-center gap-1">
+                <StatusDot ok={rOk} />
+                {rEngine?.skipped
+                  ? "não verificado"
+                  : rEngine?.error
+                    ? `erro: ${rEngine.error.slice(0, 60)}`
+                    : `${rEngine?.rVersion ?? "?"} (${rEngine?.mode})`}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs">OpenAI:</span>
+              <span className="flex items-center gap-1">
+                <StatusDot ok={health.openai === "configured"} /> {health.openai}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs">Anthropic:</span>
+              <span className="flex items-center gap-1">
+                <StatusDot ok={health.anthropic === "configured"} /> {health.anthropic}
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Database className="h-4 w-4 text-muted-foreground" />
-            <span className="font-mono text-xs">DB:</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> {health.db}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Activity className="h-4 w-4 text-muted-foreground" />
-            <span className="font-mono text-xs">R (mirt/EGA):</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> {health.rRuntime}</span>
-          </div>
+
+          {/* Detailed R package list (only on deep check) */}
+          {rEngine && !rEngine.skipped && (rEngine.packages?.length ?? 0) > 0 && (
+            <div className="pt-2 border-t">
+              <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
+                <Boxes className="h-3 w-3" />
+                <span>Pacotes R disponíveis em <span className="font-mono">~/.R/library-4.4</span></span>
+                {rEngine.aigenieAvailable !== null && (
+                  <Badge variant={rEngine.aigenieAvailable ? "default" : "outline"} className="text-[10px]">
+                    AIGENIE: {rEngine.aigenieAvailable ? "instalado" : "ausente (fallback igraph)"}
+                  </Badge>
+                )}
+                {rEngine.udpipeModelCached !== null && (
+                  <Badge variant={rEngine.udpipeModelCached ? "default" : "outline"} className="text-[10px]">
+                    udpipe PT-BR: {rEngine.udpipeModelCached ? "cache OK" : "ausente"}
+                  </Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5" data-testid="r-package-list">
+                {rEngine.packages.map((p) => (
+                  <Badge
+                    key={p.name}
+                    variant={p.available ? "secondary" : "destructive"}
+                    className="text-[10px] font-mono"
+                  >
+                    {p.available ? <CheckCircle2 className="h-2.5 w-2.5 mr-1" /> : <AlertCircle className="h-2.5 w-2.5 mr-1" />}
+                    {p.name}
+                    {p.available && p.version ? ` ${p.version}` : ""}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -96,7 +169,7 @@ export default function Dashboard() {
                 <BarChart data={summary.itemsByConstruct} layout="vertical" margin={{ left: 50 }}>
                   <XAxis type="number" />
                   <YAxis dataKey="construct" type="category" width={100} tick={{ fontSize: 12 }} />
-                  <RechartsTooltip 
+                  <RechartsTooltip
                     cursor={{ fill: 'rgba(0,0,0,0.05)' }}
                     contentStyle={{ backgroundColor: 'var(--card)', borderColor: 'var(--border)', color: 'var(--card-foreground)' }}
                   />

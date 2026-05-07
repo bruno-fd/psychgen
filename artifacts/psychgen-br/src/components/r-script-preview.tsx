@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from "react";
+import Editor, { loader } from "@monaco-editor/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Code2, Download, Copy, Check, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/use-debounce";
+
+// Use the bundled monaco worker (Vite resolves the package locally) so the
+// editor works offline and behind firewalls without hitting the CDN.
+loader.config({
+  paths: {
+    vs: new URL("../../node_modules/monaco-editor/min/vs", import.meta.url)
+      .toString(),
+  },
+});
 
 interface RScriptPreviewProps {
   projectId: number;
@@ -124,16 +134,31 @@ export function RScriptPreview({
       </CardHeader>
       <CardContent className="p-0">
         {error ? (
-          <div className="text-xs text-destructive p-3 border-t">
-            {error}
-          </div>
+          <div className="text-xs text-destructive p-3 border-t">{error}</div>
         ) : (
-          <pre
-            className="text-[11px] leading-relaxed font-mono bg-muted/40 border-t p-3 overflow-x-auto max-h-[60vh] overflow-y-auto"
-            data-testid="r-script-preview"
-          >
-            <code>{script}</code>
-          </pre>
+          <div className="border-t" data-testid="r-script-preview">
+            <Editor
+              height="60vh"
+              defaultLanguage="r"
+              language="r"
+              value={script}
+              theme="vs-dark"
+              options={{
+                readOnly: true,
+                domReadOnly: true,
+                minimap: { enabled: false },
+                fontSize: 12,
+                lineNumbers: "on",
+                scrollBeyondLastLine: false,
+                wordWrap: "on",
+                automaticLayout: true,
+                renderLineHighlight: "none",
+                folding: true,
+                fontFamily:
+                  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+              }}
+            />
+          </div>
         )}
       </CardContent>
     </Card>

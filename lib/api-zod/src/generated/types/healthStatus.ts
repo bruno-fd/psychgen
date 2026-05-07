@@ -5,11 +5,16 @@
  * PsychGen BR — AI-driven psychometric instrument development
  * OpenAPI spec version: 0.1.0
  */
+import type { HealthStatusAnthropic } from "./healthStatusAnthropic";
+import type { HealthStatusDb } from "./healthStatusDb";
+import type { HealthStatusOpenai } from "./healthStatusOpenai";
+import type { HealthStatusREngine } from "./healthStatusREngine";
+import type { HealthStatusStatus } from "./healthStatusStatus";
 
 export interface HealthStatus {
-  status: string;
-  db?: string;
-  rRuntime?: string;
-  openai?: string;
-  anthropic?: string;
+  status: HealthStatusStatus;
+  db: HealthStatusDb;
+  openai: HealthStatusOpenai;
+  anthropic: HealthStatusAnthropic;
+  rEngine: HealthStatusREngine;
 }
