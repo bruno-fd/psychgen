@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import * as monaco from "monaco-editor";
+import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import Editor, { loader } from "@monaco-editor/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,14 +8,15 @@ import { Code2, Download, Copy, Check, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/use-debounce";
 
-// Use the bundled monaco worker (Vite resolves the package locally) so the
-// editor works offline and behind firewalls without hitting the CDN.
-loader.config({
-  paths: {
-    vs: new URL("../../node_modules/monaco-editor/min/vs", import.meta.url)
-      .toString(),
+// Bundle monaco with the app via Vite (no CDN, no node_modules at runtime) so
+// the editor works inside the dist-only nginx container and offline.
+// `?worker` makes Vite emit a Web Worker entry that gets a hashed URL in dist.
+(self as unknown as { MonacoEnvironment: monaco.Environment }).MonacoEnvironment = {
+  getWorker() {
+    return new editorWorker();
   },
-});
+};
+loader.config({ monaco });
 
 interface RScriptPreviewProps {
   projectId: number;
