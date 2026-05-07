@@ -25,6 +25,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Play, Info, Plus, X } from "lucide-react";
+import { RScriptPreview } from "@/components/r-script-preview";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -404,8 +405,14 @@ export default function RunAigenie() {
           </Card>
         </div>
 
-        {/* Info Panel */}
-        <div>
+        {/* Right column: live R syntax preview + how-it-works */}
+        <div className="space-y-6">
+          <RScriptPreview
+            projectId={id}
+            stage="aigenie"
+            params={form.watch("params")}
+            filenamePrefix="aigenie"
+          />
           <Card className="sticky top-6">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">

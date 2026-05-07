@@ -58,6 +58,19 @@ OK: `mirt 1.46.1`, `glmnet 4.1.8`, `randomForest 4.7.1.2`, `quanteda 4.4`, `udpi
 4. **Sample Design** (`stage5_sample_design.R`): aloca tamanho amostral por estratos (sexo/idade/região) com pesos.
 5. **Export Excel** (`export_xlsx.R`): workbook multi-aba consolidando todo o projeto.
 
+### Local Docker stack (Tarefa #6 — MVP Windows)
+
+- `docker-compose.yml` orquestra 4 serviços: `postgres` (volume `psychgen_pg_data`), `r-engine` (volumes nomeados `psychgen_r_lib` para `~/.R/library` e `psychgen_r_cache` para `~/.cache/udpipe` — pacotes/modelos persistem entre rebuilds), `api` (Node 24, Express na 3001), `web` (Nginx servindo build estático + proxy `/api/*` → `api:3001` com SSE).
+- `docker/r-engine/Dockerfile` usa `rocker/r-ver:4.4.3`; `install_packages.R` instala via Posit Package Manager snapshot **2025-04-15** (CRAN reproduzível) + AIGENIE do GitHub + cache do modelo udpipe Portuguese-Bosque.
+- `docker/r-engine/plumber.R` expõe POST `/run/{aigenie,difficulty,irt,sample-design,export-xlsx}` + `GET /healthz` na porta 8000.
+- API server detecta `R_ENGINE_URL` (HTTP→Plumber dentro do compose) e cai para subprocesso local `Rscript` quando ausente (modo dev Replit). Veja `artifacts/api-server/src/lib/r-client.ts`.
+- Migração para VPS: copiar repo + `.env` + executar `docker compose up -d`. Backup com `docker exec psychgen-postgres pg_dump …`. Detalhes em `README.md`.
+
+### R syntax preview (UI)
+
+- Cada página de execução (`RunAigenie`, `RunDifficulty`, `RunIrt`, `RunSampleDesign`) tem painel lateral `<RScriptPreview>` (`artifacts/psychgen-br/src/components/r-script-preview.tsx`) que faz POST debounced (350 ms) em `/api/projects/:id/runs/:stage/preview` e renderiza a sintaxe R gerada como código somente-leitura, com botões **Copiar** e **Baixar .R**.
+- Geradores de sintaxe (fonte da verdade backend): `artifacts/api-server/src/lib/r-syntax/index.ts` — funções `aigenie`/`difficulty`/`irt`/`sample_design` retornam o script `.R` exato que será executado pelo Plumber/Rscript. A coluna `pipeline_jobs.scriptR` (text) persiste o script de cada execução para reproducibilidade.
+
 ### Operational notes
 
 - The job runner is in-memory (single-node). Process restarts orphan running jobs — acceptable for the current MVP. A durable queue (DB-backed worker) would be the next hardening step.

@@ -1,0 +1,58 @@
+FROM rocker/r-ver:4.4.3
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    R_LIBS_USER=/home/r/.R/library-4.4 \
+    HOME=/home/r
+
+# System libs needed by EGAnet, qgraph, semPlot, lavaan, mirt, udpipe, quanteda,
+# httr2, openxlsx, plumber, etc.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
+      gfortran \
+      libcurl4-openssl-dev \
+      libssl-dev \
+      libxml2-dev \
+      libfontconfig1-dev \
+      libfreetype6-dev \
+      libharfbuzz-dev \
+      libfribidi-dev \
+      libpng-dev \
+      libtiff5-dev \
+      libjpeg-dev \
+      libcairo2-dev \
+      libudunits2-dev \
+      libgdal-dev \
+      libgeos-dev \
+      libproj-dev \
+      libsodium-dev \
+      libgit2-dev \
+      libnode-dev \
+      pandoc \
+      curl \
+      ca-certificates \
+      git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user owning the persisted library volume.
+RUN useradd -m -u 1000 -s /bin/bash r \
+    && mkdir -p /home/r/.R/library-4.4 /home/r/.cache /srv/r-scripts \
+    && chown -R r:r /home/r /srv
+
+WORKDIR /srv
+
+COPY --chown=r:r install_packages.R /srv/install_packages.R
+COPY --chown=r:r plumber.R /srv/plumber.R
+COPY --chown=r:r entrypoint.sh /srv/entrypoint.sh
+RUN chmod +x /srv/entrypoint.sh
+
+USER r
+
+# Install R packages into the system lib at build time. Heavy deps (mirt,
+# EGAnet, udpipe, quanteda, plumber, AIGENIE) are pre-baked so the image is
+# self-contained; the user volume at $R_LIBS_USER is for any extras and
+# survives container removal.
+RUN Rscript /srv/install_packages.R
+
+EXPOSE 8000
+
+ENTRYPOINT ["/srv/entrypoint.sh"]

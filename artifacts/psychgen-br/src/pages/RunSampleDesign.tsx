@@ -31,6 +31,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Info, Play, Plus, Trash2 } from "lucide-react";
+import { RScriptPreview } from "@/components/r-script-preview";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -312,7 +313,13 @@ export default function RunSampleDesign() {
           </Card>
         </div>
 
-        <div>
+        <div className="space-y-6">
+          <RScriptPreview
+            projectId={id}
+            stage="sample_design"
+            params={form.watch("params")}
+            filenamePrefix="sample_design"
+          />
           <Card className="sticky top-6">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">

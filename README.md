@@ -1,0 +1,168 @@
+# PsychGen BR
+
+Sistema R-first para o desenvolvimento de instrumentos psicométricos no
+mercado editorial brasileiro. Pipeline completo:
+
+1. **AIGENIE** — geração iterativa de itens via LLM + EGA (em R).
+2. **Predição de dificuldade** — features linguísticas (udpipe Portuguese-Bosque)
+   + embeddings + glmnet/randomForest.
+3. **Calibração IRT** — respondentes sintéticos (LLMs como personas) +
+   `mirt::mirt()` (Rasch / 2PL / 3PL / graded).
+4. **Plano amostral** — pós-estratificação + design effect + shortlist
+   informacional via `mirt`.
+5. **Export** — workbook XLSX multi-aba via `openxlsx`.
+
+A interface é toda em pt-BR, com um painel lateral que mostra **a sintaxe R
+gerada em tempo real** a partir dos parâmetros do formulário (fonte da
+verdade no backend, em TypeScript). O botão **Baixar .R** entrega o script
+exato que será executado.
+
+---
+
+## Rodando localmente (Windows / macOS / Linux)
+
+### Pré-requisitos
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) ≥ 4.30
+  (no Windows precisa do WSL 2 habilitado).
+- ≥ 8 GB de RAM disponíveis para o Docker (a imagem do R + EGAnet + mirt
+  consome bem na primeira build).
+- ≥ 5 GB de disco livre.
+
+### Primeira execução
+
+```bash
+git clone <este-repositorio>
+cd <pasta-do-repo>
+cp .env.example .env
+# Edite .env e coloque sua OPENAI_API_KEY (ou as variáveis AI_INTEGRATIONS_*).
+
+docker compose up -d --build
+```
+
+A primeira build leva **15–30 minutos** porque o container `r-engine` compila
+todos os pacotes do CRAN (mirt, EGAnet, udpipe, quanteda, etc.) a partir do
+fonte. As builds seguintes são instantâneas (camadas em cache).
+
+Aplique o schema do banco (uma única vez por máquina):
+
+```bash
+docker compose exec api pnpm --filter @workspace/db run db:push
+```
+
+Acesse:
+
+| Serviço     | URL                       |
+|-------------|---------------------------|
+| Web (UI)    | http://localhost:5173     |
+| API REST    | http://localhost:3001/api |
+| R engine    | http://localhost:8000     |
+| Postgres    | localhost:5432            |
+
+### Verificando saúde
+
+```bash
+curl http://localhost:8000/healthz | jq          # R + pacotes
+curl http://localhost:3001/api/healthz?deep=1    # API + DB + R via HTTP
+```
+
+### Comandos úteis
+
+```bash
+# Logs ao vivo
+docker compose logs -f r-engine
+docker compose logs -f api
+
+# Reiniciar só um serviço
+docker compose restart api
+
+# Parar tudo (preserva dados — volumes nomeados)
+docker compose down
+
+# Apagar tudo INCLUSIVE banco e biblioteca R
+docker compose down -v
+
+# Entrar no container R (debug)
+docker compose exec r-engine R
+```
+
+---
+
+## Estrutura
+
+```
+.
+├── docker-compose.yml             ← orquestra os 4 serviços
+├── docker/r-engine/               ← Dockerfile + plumber.R + install_packages.R
+├── artifacts/
+│   ├── api-server/                ← Express + Drizzle + Zod
+│   │   ├── Dockerfile
+│   │   ├── r-scripts/             ← stage1..5 + healthcheck (montados em r-engine)
+│   │   └── src/lib/r-syntax/      ← geradores de sintaxe R (fonte da verdade)
+│   └── psychgen-br/               ← React + Vite + shadcn (UI pt-BR)
+│       ├── Dockerfile
+│       └── nginx.conf
+├── lib/
+│   ├── api-spec/openapi.yaml      ← contrato OpenAPI compartilhado
+│   ├── api-zod/                   ← schemas Zod gerados
+│   ├── api-client-react/          ← hooks React Query gerados
+│   └── db/                        ← schema Drizzle + migrações
+└── README.md
+```
+
+### Volumes persistidos
+
+| Volume               | Conteúdo                          | Sobrevive a `down`? | A `down -v`? |
+|----------------------|-----------------------------------|---------------------|--------------|
+| `psychgen_pg_data`   | banco PostgreSQL                  | ✅                   | ❌            |
+| `psychgen_r_lib`     | biblioteca R do usuário (~/.R)    | ✅                   | ❌            |
+| `psychgen_r_cache`   | modelo udpipe Portuguese-Bosque   | ✅                   | ❌            |
+
+---
+
+## Migração para VPS
+
+Como tudo é declarado em `docker-compose.yml`, a migração é trivial:
+
+1. Provisione qualquer VPS Linux com Docker (Hetzner, DigitalOcean, OCI free).
+2. `git clone` deste repositório no servidor.
+3. `cp .env.example .env` e ajuste senhas + chaves de API.
+4. (Opcional) Coloque `nginx` ou Caddy na frente para HTTPS — aponte para
+   `localhost:5173`.
+5. `docker compose up -d --build`.
+6. `docker compose exec api pnpm --filter @workspace/db run db:push`.
+
+Backup do banco:
+
+```bash
+docker compose exec -T postgres pg_dump -U psychgen psychgen | gzip > backup.sql.gz
+```
+
+Restore:
+
+```bash
+gunzip < backup.sql.gz | docker compose exec -T postgres psql -U psychgen -d psychgen
+```
+
+---
+
+## Desenvolvimento
+
+A pasta `artifacts/api-server/r-scripts` é montada **read-only** dentro do
+container `r-engine`, então qualquer edição em um `stageN.R` do host é
+refletida no próximo POST sem rebuild.
+
+Para alterar a UI ou a API durante desenvolvimento, rode-as fora do Docker
+e aponte para os serviços containerizados:
+
+```bash
+# Banco + R rodando em containers
+docker compose up -d postgres r-engine
+
+# API e Web no host
+DATABASE_URL=postgres://psychgen:psychgen@localhost:5432/psychgen \
+R_ENGINE_URL=http://localhost:8000 \
+pnpm --filter @workspace/api-server run dev
+
+pnpm --filter @workspace/psychgen-br run dev
+```

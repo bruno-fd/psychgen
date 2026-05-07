@@ -7,7 +7,8 @@ import {
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger";
-import { runRScript, type RStreamEvent } from "./r-runner";
+import { type RStreamEvent } from "./r-runner";
+import { runStage as runRScript } from "./r-client";
 
 class JobCancelledError extends Error {
   constructor() {
@@ -106,6 +107,7 @@ export async function enqueueJob(opts: {
   projectId: number;
   stage: Stage;
   params: Record<string, unknown>;
+  scriptR?: string;
 }): Promise<number> {
   const [row] = await db
     .insert(pipelineJobsTable)
@@ -114,6 +116,7 @@ export async function enqueueJob(opts: {
       stage: opts.stage,
       status: "queued",
       paramsJson: opts.params,
+      scriptR: opts.scriptR,
     })
     .returning({ id: pipelineJobsTable.id });
   if (!row) throw new Error("Failed to insert job");

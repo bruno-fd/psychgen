@@ -23,6 +23,7 @@ export const pipelineJobsTable = pgTable("pipeline_jobs", {
   message: text("message"),
   paramsJson: jsonb("params_json").notNull().default({}),
   resultJson: jsonb("result_json"),
+  scriptR: text("script_r"),
   error: text("error"),
   startedAt: timestamp("started_at", { withTimezone: true }),
   finishedAt: timestamp("finished_at", { withTimezone: true }),

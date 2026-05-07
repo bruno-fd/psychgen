@@ -19,6 +19,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Play, Info } from "lucide-react";
+import { RScriptPreview } from "@/components/r-script-preview";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -307,7 +308,13 @@ export default function RunIrt() {
           </Card>
         </div>
 
-        <div>
+        <div className="space-y-6">
+          <RScriptPreview
+            projectId={id}
+            stage="irt"
+            params={form.watch("params")}
+            filenamePrefix="irt"
+          />
           <Card className="sticky top-6">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
