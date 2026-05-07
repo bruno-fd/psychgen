@@ -40,7 +40,6 @@ router.get("/healthz", async (req, res) => {
         : "missing",
     anthropic:
       process.env["ANTHROPIC_API_KEY"] ||
-      process.env["AI_INTEGRATIONS_AANTHROPIC_API_KEY"] ||
       process.env["AI_INTEGRATIONS_ANTHROPIC_API_KEY"]
         ? "configured"
         : "missing",
