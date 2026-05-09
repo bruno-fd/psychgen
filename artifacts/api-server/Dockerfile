@@ -1,5 +1,5 @@
 # --- Build stage ------------------------------------------------------------
-FROM node:24-alpine AS builder
+FROM node:24-slim AS builder
 
 RUN corepack enable && corepack prepare pnpm@10.26.1 --activate
 
@@ -26,7 +26,7 @@ COPY artifacts/api-server ./artifacts/api-server
 RUN pnpm --filter @workspace/api-server run build
 
 # --- Runtime stage ----------------------------------------------------------
-FROM node:24-alpine AS runtime
+FROM node:24-slim AS runtime
 
 RUN corepack enable && corepack prepare pnpm@10.26.1 --activate
 
