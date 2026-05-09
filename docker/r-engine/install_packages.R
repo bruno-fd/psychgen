@@ -3,7 +3,10 @@
 # Pinned CRAN snapshot (Posit PPM 2025-04-15) for reproducibility.
 # ============================================================================
 options(
-  repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/jammy/2025-04-15"),
+  # Match the base image OS (rocker/r-ver:4.4.3 → Ubuntu Noble 24.04).
+  # Using a mismatched distro (e.g. jammy) ships binaries that may install
+  # but fail to load due to libc/libstdc++ ABI mismatches.
+  repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/noble/2025-04-15"),
   Ncpus = max(1L, parallel::detectCores() - 1L),
   install.packages.check.source = "no"
 )
@@ -40,7 +43,11 @@ for (p in cran_pkgs) {
     next
   }
   cat(">>> Installing ", p, "\n", sep = "")
-  install.packages(p, dependencies = TRUE)
+  # dependencies = NA installs only Depends/Imports/LinkingTo (default).
+  # dependencies = TRUE additionally pulls Suggests, which for plumber alone
+  # cascades into arrow/readr/vroom/ragg etc. (~30 unneeded packages, some of
+  # which fail to load on the noble base) and explodes build time.
+  install.packages(p, dependencies = NA)
   if (!requireNamespace(p, quietly = TRUE))
     stop(sprintf("Failed to install %s", p))
 }
