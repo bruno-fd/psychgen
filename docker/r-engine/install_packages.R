@@ -7,7 +7,12 @@ options(
   # Using a mismatched distro (e.g. jammy) ships binaries that may install
   # but fail to load due to libc/libstdc++ ABI mismatches.
   repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/noble/2025-04-15"),
-  Ncpus = max(1L, parallel::detectCores() - 1L),
+  # Ncpus = 1L: disable install.packages parallel installer. With Ncpus > 1
+  # the parallel workers install binaries to lib but the parent R session
+  # sometimes fails to register them in time for requireNamespace() right
+  # after the call returns (observed with plumber/igraph). Single-threaded
+  # install is slower (~5 extra minutes total) but deterministic.
+  Ncpus = 1L,
   install.packages.check.source = "no"
 )
 
@@ -48,8 +53,18 @@ for (p in cran_pkgs) {
   # cascades into arrow/readr/vroom/ragg etc. (~30 unneeded packages, some of
   # which fail to load on the noble base) and explodes build time.
   install.packages(p, dependencies = NA)
-  if (!requireNamespace(p, quietly = TRUE))
+  if (!requireNamespace(p, quietly = TRUE)) {
+    cat("!!! requireNamespace(", p, ") returned FALSE. Diagnostics:\n", sep = "")
+    cat("    .libPaths(): ", paste(.libPaths(), collapse = " | "), "\n")
+    cat("    Installed in lib? ",
+        p %in% rownames(installed.packages()), "\n")
+    err <- tryCatch(
+      { loadNamespace(p); "OK (loaded on retry)" },
+      error = function(e) conditionMessage(e)
+    )
+    cat("    loadNamespace error: ", err, "\n", sep = "")
     stop(sprintf("Failed to install %s", p))
+  }
 }
 
 # ----------------------------------------------------------------------------
