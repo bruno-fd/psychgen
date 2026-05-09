@@ -1,0 +1,556 @@
+Skip to content
+
+
+AI
+
+Knowledge Base Framework
+
+
+
+Invite
+
+Publish
+
+
+
+Main version
+Knowledge Base Framework
+
+New task
+
+Filters
+ME
+
+
+Open task board
+Library
+
+File tree
+Search
+
+New
+Apps
+PsychGen BR
+PsychGen BR
+Website
+
+
+Agent
+4
+
+Settings
+Remote
+https://github.com/bruno-fd/psychgen
+
+Create Remote
+Connections
+
+GitHub
+GitHub
+Active
+
+Delete
+
+Bitbucket
+Bitbucket
+Disconnected
+
+Sign in
+
+GitLab
+GitLab
+Disconnected
+
+Sign in
+Commit author
+BD
+
+BrunoDamasio
+BrunoDamasio
+Default Profile
+Bruno Damásio <24746739-BrunoDamasio@users.noreply.replit.com>
+
+
+psicometriaonline
+psicometriaonline
+GitHub Settings
+psicometriaonline <brunodamasio@psicometriaonline.com.br>
+
+Update local Docker setup with revised port configurations
+
+
+
+Show previous messages
+
+11 messages & 132 actions
+
+Checkpoint made
+2 days ago
+
+Worked for 37 minutes
+me explique exatamente como está o funcionamento e como devo testar.
+
+2 days ago
+PsychGen BR — Como funciona e como testar
+O que foi entregue
+A Tarefa #6 montou um MVP local rodando 100% via Docker no Windows (ou macOS/Linux), com toda a stack persistente e auto-bootável com um único comando.
+
+Arquitetura — 4 contêineres orquestrados
+Serviço	O que faz	Porta exposta
+postgres	Banco PostgreSQL (volume psychgen_pg_data)	5432
+r-engine	API Plumber (R 4.4.3 + mirt + EGAnet + udpipe + AIGENIE)	interna apenas
+api	Node 24 / Express — gera scripts R, persiste jobs, faz proxy para o R	8080
+web	Nginx servindo o React build + proxy /api/* → api:8080	5173
+Volumes nomeados garantem que a biblioteca R compilada (psychgen_r_lib), o cache do udpipe (psychgen_r_cache) e o banco sobrevivem a docker compose down. Só docker compose down -v apaga tudo.
+
+O que rola por baixo do capô
+Backend é a fonte da verdade do R: os geradores em artifacts/api-server/src/lib/r-syntax/ montam o script R completo (com MERGE_AND_SOURCE dos stages) a partir dos parâmetros do formulário.
+O mesmo texto é enviado pra UI no painel lateral (Monaco com syntax highlighting + botão Baixar .R) e persistido em pipeline_jobs.script_r.
+Quando você clica em "Executar", a API faz POST /run/script no r-engine com exatamente esse script. O R executa, escreve PSYCHGEN_PROGRESS/PSYCHGEN_LOG num arquivo NDJSON num volume compartilhado, e a API faz tail desse arquivo e empurra como SSE pra UI em tempo real.
+Sem comando manual de migração: o entrypoint do contêiner api roda drizzle-kit push --force automaticamente antes de subir o Node — primeira execução já tem o schema pronto.
+Como testar (passo a passo)
+Pré-requisitos
+Docker Desktop ≥ 4.30 (Windows precisa de WSL 2)
+≥ 8 GB de RAM livres pro Docker
+≥ 5 GB de disco
+1. Subir tudo
+git clone <este-repo>
+cd <pasta>
+cp .env.example .env
+# edite .env e ponha sua OPENAI_API_KEY (ou AI_INTEGRATIONS_*)
+docker compose up -d --build
+
+⚠️ A primeira build leva 15–30 min porque o r-engine compila mirt, EGAnet, udpipe etc. da fonte. Builds seguintes ficam em cache (segundos).
+
+2. Verificar que está saudável
+# Status dos contêineres (todos devem estar "healthy"):
+docker compose ps
+# Health profundo via API (mostra versão do R + lista de pacotes):
+curl 'http://localhost:8080/api/healthz?deep=1' | jq
+# R engine direto (interno — entra no container):
+docker compose exec r-engine curl -s http://localhost:8000/healthz | jq
+# Logs ao vivo:
+docker compose logs -f api
+docker compose logs -f r-engine
+
+3. Abrir a UI
+Abra http://localhost:5173 no navegador.
+
+No Dashboard você deve ver:
+
+Barra de saúde no topo: API/DB/R engine com bolinha verde
+Versão do R (R 4.4.3) e modo (http)
+Badges de AIGENIE: instalado e udpipe PT-BR: cache OK
+Lista expandida com cada pacote R e sua versão (mirt 1.43, EGAnet 2.0.5, etc.)
+4. Testar o fluxo "preview = script executado"
+Crie um projeto novo (botão Novo Projeto).
+Vá pra qualquer estágio — ex: AIGENIE (/projects/:id/aigenie).
+Preencha o formulário (construto, número de itens etc.).
+No painel lateral à direita o Monaco deve mostrar a sintaxe R com highlighting, atualizando ~350ms depois que você para de digitar.
+Clique no botão .R — baixa exatamente o script que vai rodar.
+Clique em Executar — o painel de logs abre via SSE e mostra [ETAPA 1/N] ... em tempo real, com barra de progresso.
+Quando terminar, o job ficou registrado e seu script_r está persistido — confirme:
+docker compose exec postgres psql -U psychgen -d psychgen \
+  -c "SELECT id, stage, status, length(script_r) AS chars FROM pipeline_jobs ORDER BY id DESC LIMIT 5;"
+
+5. Repita pros outros estágios
+Predição de dificuldade (udpipe + glmnet)
+IRT (mirt: Rasch / 2PL / 3PL / graded)
+Plano amostral (pós-estratificação + design effect)
+Export (gera um .xlsx multi-aba via openxlsx)
+6. Teste a persistência (o ponto da história "R compilado uma vez só")
+docker compose down            # para tudo
+docker compose up -d            # sobe DE NOVO
+# Em < 5 segundos tudo volta. NENHUM pacote R reinstala.
+
+Se você fizer docker compose down -v aí sim apaga os volumes e a próxima build leva 15–30 min de novo.
+
+Coisas para conferir / atenção
+AIGENIE: o SHA padrão em docker/r-engine/install_packages.R (DEFAULT_AIGENIE_REF = "ff19571...") é um placeholder pinado. Se quando você rodar o build o GitHub responder 404 nesse commit, o instalador faz fallback graceful (loga warning e segue — stage1_aigenie.R cai pra igraph::cluster_louvain). Pra forçar uma SHA real, ponha INSTALL_AIGENIE_REF=<sha> no .env.
+Migração para VPS é trivial: mesmo docker-compose.yml, mesmo .env — basta docker compose up -d --build no servidor.
+Modo dev fora do Docker (Replit, edição rápida): docker compose up -d postgres e rode a API/web no host (ver seção "Desenvolvimento" do README).
+Status do code review
+Após 5 rodadas, a tarefa foi aprovada com comentários não-bloqueantes:
+
+Endpoint de preview é validado à mão e ainda não está no OpenAPI (drift de contrato — listado como follow-up).
+Entrypoint tolera falha do drizzle-kit push (resiliente, mas pode mascarar drift de schema em produção).
+Reconciliação do replit.md com as portas reais — já corrigido nesta rodada.
+Se algo no fluxo acima não bater (UI não abre, healthz mostra degraded, Monaco em branco), me passe os logs (docker compose logs api e docker compose logs r-engine) que eu investigo.
+
+entendi porra nenhuma.
+
+passo a passo do que preciso fazer.
+
+explicitamente, como se tivesse falando com 1 criança de 10 anos.
+
+2 days ago
+Passo a passo, sem firula
+O que você vai fazer
+Rodar o programa na sua máquina (Windows). Não no Replit, não na nuvem. Na sua máquina.
+
+Passo 1 — Instalar o Docker (1 vez só, nunca mais)
+Vá em https://www.docker.com/products/docker-desktop/
+Baixe Docker Desktop for Windows.
+Instale (next, next, next).
+Reinicia o computador quando ele pedir.
+Abre o Docker Desktop. Espera aparecer a baleinha 🐳 no canto inferior direito da tela e ela ficar parada (não animada). Quer dizer que ligou.
+Se ele reclamar de "WSL 2", clica no link que ele mostra, instala o que ele pede, e reinicia. Só isso.
+
+Passo 2 — Baixar o código do projeto (1 vez só)
+Abre o Explorador de Arquivos do Windows.
+Cria uma pasta em qualquer lugar fácil, tipo C:\psychgen.
+No Replit, no canto superior, clica nos 3 pontinhos → Download as zip.
+Extrai o zip dentro de C:\psychgen. Você vai ter C:\psychgen\workspace\ (ou parecido), com um arquivo chamado docker-compose.yml lá dentro.
+Passo 3 — Colocar sua chave da OpenAI
+Dentro da pasta do projeto, acha um arquivo chamado .env.example.
+Faz uma cópia dele e renomeia a cópia pra .env (sem o .example).
+Abre o .env no Bloco de Notas.
+Procura a linha:
+OPENAI_API_KEY=
+
+Cola sua chave da OpenAI depois do =. Fica assim:
+OPENAI_API_KEY=sk-proj-abcd1234...
+
+Salva e fecha.
+Passo 4 — Ligar o programa
+Abre a pasta do projeto no Explorador de Arquivos (a pasta que tem o docker-compose.yml).
+Na barra de endereço do Explorer, apaga o que tá lá, digita cmd e aperta Enter. Vai abrir um terminal preto já dentro da pasta certa.
+No terminal preto, digita exatamente isso e aperta Enter:
+docker compose up -d --build
+
+Vai sair muito texto. Deixa rodando.
+Da primeira vez vai demorar 15 a 30 minutos. Vai parecer travado mas não tá. Vai tomar um café. (Da segunda vez em diante são 10 segundos.)
+Quando voltar pro > piscando sem mais texto novo, deu certo.
+Passo 5 — Conferir se ligou
+No mesmo terminal preto, digita:
+
+docker compose ps
+
+Você precisa ver 4 linhas com a palavra healthy ou running em todas. Se alguma estiver unhealthy ou exited, me avisa.
+
+Passo 6 — Usar o programa
+Abre o navegador (Chrome, Edge, o que for).
+Digita na barra de endereço: http://localhost:5173
+Aperta Enter.
+A tela do PsychGen BR vai abrir. É essa que você usa.
+Passo 7 — Testar de verdade
+Na tela inicial (Painel), olha a barrinha em cima. Deve ter bolinhas verdes em "API", "DB" e "R engine". Se tiverem verdes, tudo funciona.
+Clica em "Novo Projeto", dá um nome, salva.
+Entra no projeto, clica em AIGENIE (primeiro estágio).
+Preenche os campos do formulário (construto, número de itens etc.).
+Olha a caixa preta do lado direito — é o painel de sintaxe R. Ele vai mudando sozinho conforme você digita. Esse é o código R real que vai rodar.
+Clica no botão .R ali em cima do painel — baixa o arquivo no seu computador. Você pode abrir esse arquivo no RStudio se quiser ver.
+Clica em Executar. Aparece uma janelinha de logs com o R rodando ao vivo.
+Espera terminar. Repete para os outros estágios (Dificuldade → IRT → Plano amostral → Export).
+Passo 8 — Desligar (quando quiser parar)
+No mesmo terminal preto:
+
+docker compose down
+
+Pronto. Os dados ficam salvos. Da próxima vez é só rodar docker compose up -d (sem o --build) e em 10 segundos volta tudo.
+
+Se der pau
+Me copia e cola aqui o que aparecer destes 2 comandos:
+
+docker compose ps
+docker compose logs api
+
+Que eu te falo o que tá errado.
+
+Estou preso na parte do download. não consigo baixar o projeto
+
+26 minutes ago
+Sem problema, vamos resolver
+Tem 3 jeitos. Faz o Jeito 1 primeiro, é o mais fácil.
+
+Jeito 1 — Baixar pelo Replit (3 cliques)
+Aqui no Replit, olha bem em cima da tela, no canto superior esquerdo: tem o nome do projeto.
+Clica no nome dele. Vai abrir um menu.
+Procura "Download as zip" (ou "Baixar como zip" / um ícone de seta apontando pra baixo ⬇).
+Vai baixar um arquivo .zip na pasta Downloads do seu PC.
+Vai na pasta Downloads, clica com botão direito no zip → "Extrair tudo..." → escolhe C:\psychgen → Extrair.
+✅ Pronto, você tem o projeto.
+
+Se não achar o "Download as zip"
+Tenta este caminho alternativo no Replit:
+
+No menu lateral esquerdo, clica no ícone de 3 pontinhos (⋯) ou engrenagem (⚙).
+Procura "Export" ou "Download".
+Ou:
+
+Aperta Ctrl + K (no Replit).
+Digita "download".
+Clica na opção que aparecer.
+Jeito 2 — Se nada disso funcionar, me avisa
+Se você não encontrar o botão de download de jeito nenhum, me responde com uma destas duas coisas:
+
+(a) Uma foto da tela do Replit mostrando o topo da página (pode ser print de tela mesmo, Tecla Windows + Shift + S, recorta e cola aqui).
+
+(b) Ou o link da URL do seu projeto no Replit (algo tipo https://replit.com/@seu-nome/nome-do-projeto).
+
+Com isso eu te falo exatamente onde clicar.
+
+Jeito 3 — Avançado (só se você já mexeu com isso)
+Se você já tem Git instalado no seu PC, abre o terminal (cmd) numa pasta vazia e roda:
+
+git clone <link-do-repositorio>
+
+Mas se a frase acima não fez sentido, ignora e usa o Jeito 1.
+
+👉 Tenta o Jeito 1 e me avisa o que apareceu na tela. Se travar em algum passo, me fala em qual passo travou que eu destravo.
+
+
+Attached Image
+não há local para download, nem na forma 1 nem na 2.
+
+Sobre o git, eu posso subir facilmente pro meu git e baixar por lá, meu receio é o projeto estar com muitas falhas, nada funcionar, pedir vários ajustes (provavelmente vai precisar ajustar) e ter que ficar fazendo isso varias vezes... upload / download.....
+
+22 minutes ago
+Boa, tô vendo o seu menu
+Você tá no menu certo. Não tem o "Download as zip" porque o Replit removeu essa opção desse menu — agora ele tá em outro lugar.
+
+Onde tá o download agora
+No menu lateral esquerdo do Replit (a barra cinza vertical), procura o ícone de 3 pontinhos (⋯) ou de engrenagem (⚙) — geralmente fica lá embaixo. Clica nele.
+
+Vai aparecer "Settings" / "Configurações" → procura a aba "Git" ou "Version Control" ou "Export".
+
+Se mesmo assim não achar, vai direto pro Git mesmo, é o caminho certo. Vou tirar seu medo:
+
+Sobre o medo do "upload/download várias vezes" — relaxa
+Não vai ser assim. Quando você usa Git, o fluxo é:
+
+Você clona 1 vez. Pronto, o projeto tá na sua máquina pra sempre.
+Quando der pau e eu corrigir aqui no Replit, você roda 1 comando (git pull) na sua máquina e ele baixa só o que mudou (alguns kilobytes, em 2 segundos). Não é zip novo, não é refazer tudo.
+Os volumes do Docker (banco, biblioteca R compilada) continuam intactos — você não perde nada, não recompila nada.
+Ou seja: uma correção minha = 1 comando seu de 2 segundos. Sem dor.
+
+Passo a passo pro Git
+Passo A — Conectar Replit ao seu GitHub (1 vez só)
+No Replit, no menu lateral esquerdo, clica no ícone do Git (parece um pequeno desenho de árvore com pontos, ou escrito "Git" / "Version Control").
+Clica em "Connect to GitHub" ou "Create a Git repository".
+Ele vai pedir login no GitHub — autoriza.
+Dá um nome pro repositório (qualquer um, ex: psychgen-br). Pode ser privado se você quiser.
+Clica em "Create" ou "Push". Espera uns segundos. Pronto, o código tá no seu GitHub.
+Passo B — Baixar pra sua máquina (1 vez só)
+Instala o Git for Windows: https://git-scm.com/download/win — next, next, next.
+No seu PC, abre o Explorador, cria a pasta C:\psychgen, entra nela.
+Na barra de endereço do Explorer, digita cmd e Enter.
+No terminal preto, cola (botão direito → colar):
+git clone https://github.com/SEU-USUARIO/psychgen-br.git
+
+(substitui SEU-USUARIO pelo seu nome no GitHub e psychgen-br pelo nome que você deu).
+Vai baixar tudo. Acabou.
+Passo C — Daqui pra frente, quando eu corrigir algo
+Eu corrijo aqui no Replit e dou um git push. Você na sua máquina abre o terminal na pasta do projeto e roda:
+
+git pull
+docker compose up -d --build
+
+Em 30 segundos tá atualizado e rodando. O --build só refaz a parte que mudou, o resto fica em cache.
+
+Comece pelo Passo A
+Tenta achar o ícone do Git no menu lateral esquerdo do Replit e clica em "Connect to GitHub". Me manda print do que apareceu que eu te guio dali.
+
+vamos fazer direito via git, como conectar o replit com git
+
+19 minutes ago
+Conectar Replit ao GitHub — passo a passo
+Antes de começar
+Você precisa ter uma conta no GitHub. Se ainda não tem:
+
+Vai em https://github.com/signup
+Cria uma conta (e-mail, senha, escolhe um nome de usuário). É grátis.
+Confirma o e-mail.
+Volta aqui depois.
+
+Passo 1 — Achar o painel de Git no Replit
+No Replit, na barra lateral esquerda (a coluna fina com ícones), procura um destes ícones:
+
+Um desenho que parece 3 bolinhas conectadas por linhas (logo do Git), ou
+Escrito "Git", ou
+Um ícone de galho de árvore (branch).
+Geralmente fica no meio da barra. Clica nele.
+
+Se não achar, aperta Ctrl + K (ou Cmd + K no Mac) — abre uma barra de busca. Digita "git" e clica na primeira opção que aparecer.
+
+Passo 2 — Criar o repositório
+Vai abrir um painel do Git no lado esquerdo. Na primeira vez ele vai mostrar um botão tipo:
+
+"Initialize Git Repository" → clica.
+Depois aparece "Connect to GitHub" ou "Create a GitHub repository" → clica.
+Passo 3 — Autorizar o Replit no seu GitHub
+Vai abrir uma janela do GitHub pedindo permissão.
+Faz login no GitHub se ele pedir.
+Clica em "Authorize Replit" (botão verde).
+A janela fecha sozinha e volta pro Replit.
+Passo 4 — Configurar o repositório
+De volta ao Replit, ele vai te perguntar:
+
+Repository name (nome do repositório): digita psychgen-br (ou outro nome que você quiser).
+Privacy: escolhe Private (privado — só você vê) ou Public (todo mundo vê). Recomendo Private.
+Clica em "Create repository on GitHub".
+Espera uns 10–30 segundos. Ele vai:
+
+Criar o repositório no seu GitHub.
+Subir todo o código atual.
+Passo 5 — Confirmar que deu certo
+Abre https://github.com/ numa aba nova.
+Faz login.
+No canto superior esquerdo, clica no seu avatar → "Your repositories".
+Você deve ver psychgen-br lá na lista.
+Clica nele e confirma que tem várias pastas (artifacts, docker, lib, etc.) e o arquivo docker-compose.yml.
+✅ Se você vê isso, deu certo.
+
+Daqui pra frente
+Toda vez que eu corrigir alguma coisa aqui no Replit, eu vou:
+
+Salvar.
+No mesmo painel do Git no Replit, clicar em "Commit & Push" (eu faço, ou te aviso pra você fazer — é 1 clique).
+Aí você na sua máquina roda git pull e tá atualizado.
+
+Me avisa o resultado
+Faz o Passo 1 e 2 e me diz:
+
+✅ "Achei e cliquei, abriu pra conectar no GitHub" → te guio no Passo 3.
+❌ "Não acho o ícone de Git em lugar nenhum" → me manda um print da barra lateral esquerda inteira que eu aponto onde está.
+⚠️ "Apareceu um erro: ..." → me cola o erro.
+preciso desconectar de uma conta no git e conectar em outra aqui no replit
+
+17 minutes ago
+Trocar de conta GitHub no Replit
+São 2 etapas: (1) desconectar a antiga e (2) conectar a nova.
+
+Etapa 1 — Desconectar a conta atual
+No Replit
+No canto superior direito, clica no seu avatar (foto/inicial).
+Vai em "Account" (Conta) ou "Settings" (Configurações).
+Procura a aba "Connected Services" ou "Connections" ou "Integrations".
+Acha GitHub na lista e clica em "Disconnect" (Desconectar) ou "Revoke".
+Confirma.
+No GitHub (pra garantir que limpou de verdade)
+Abre https://github.com/settings/applications (precisa estar logado na conta antiga).
+Vai na aba "Authorized OAuth Apps".
+Acha Replit na lista.
+Clica nos 3 pontinhos ao lado → "Revoke access".
+Confirma.
+Etapa 2 — Sair da conta antiga do GitHub no navegador
+Isso é importante, senão o Replit vai reconectar sozinho na conta errada.
+
+Abre https://github.com/ no navegador.
+Canto superior direito → clica no avatar → "Sign out".
+Faz login com a conta nova que você quer usar.
+Confirma que tá logado nela (vê o avatar correto no canto superior direito).
+Dica: se quiser ter as duas contas abertas ao mesmo tempo, abre o Replit numa janela anônima (Ctrl + Shift + N) e faz login na conta nova do GitHub lá dentro. Aí não dá conflito.
+
+Etapa 3 — Conectar a conta nova
+Volta pro Replit.
+Vai no painel de Git (ícone na barra lateral esquerda — o tal do galho/3 bolinhas).
+Clica em "Connect to GitHub" ou "Create a GitHub repository".
+Vai abrir uma janela do GitHub pedindo autorização.
+Confirma que está logado na conta NOVA (olha o avatar/nome no topo dessa janela).
+Clica em "Authorize Replit" (botão verde).
+A janela fecha sozinha.
+Etapa 4 — Criar o repositório
+De volta ao Replit:
+
+Ele vai pedir o nome → digita psychgen-br.
+Escolhe Private (privado).
+Clica em "Create repository on GitHub".
+Espera 10–30 segundos.
+Confirma que foi pra conta certa
+Abre https://github.com/ (logado na conta nova).
+Avatar → "Your repositories".
+psychgen-br tem que aparecer aqui.
+✅ Se aparecer, deu certo.
+
+Me avisa quando passar de cada etapa
+Tenta a Etapa 1 e me diz:
+
+✅ "Desconectei" → manda print do painel pra eu confirmar e te guiar pra Etapa 2.
+⚠️ "Não acho onde desconectar" → me manda print da tela de Account/Settings do Replit que eu aponto onde clicar.
+desconectei e ja conectei na conta certa
+
+9 minutes ago
+Beleza, agora vamos criar o repositório e subir o código
+Passo 1 — Criar o repositório no Replit
+No Replit, na barra lateral esquerda, clica no ícone do Git (galho/3 bolinhas conectadas).
+
+Se não achar: aperta Ctrl + K, digita "git", clica na opção que aparecer.
+Vai abrir o painel de Git no lado esquerdo. Procura um botão tipo:
+
+"Initialize Git Repository" → clica.
+Depois aparece "Create a GitHub repository" ou "Connect to GitHub" → clica.
+Ele vai pedir:
+
+Repository name: digita psychgen-br
+Privacy: escolhe Private (privado)
+Clica em "Create".
+Espera 10–30 segundos. Ele cria no seu GitHub e sobe o código todo.
+
+Passo 2 — Confirmar que subiu
+Abre https://github.com/ numa aba nova (logado na conta certa).
+Canto superior direito → avatar → "Your repositories".
+Você deve ver psychgen-br na lista.
+Clica nele e confirma que tem as pastas artifacts/, docker/, lib/ e o arquivo docker-compose.yml.
+Me avisa o resultado
+✅ "Apareceu lá no GitHub" → te passo o próximo passo (clonar pra sua máquina e subir o Docker).
+⚠️ "Não achei o ícone de Git no Replit" → me manda print da barra lateral esquerda inteira.
+❌ "Apareceu erro: ..." → me cola o erro aqui.
+Clica nele e confirma que tem as pastas artifacts/, docker/, lib/ e o arquivo docker-compose.yml.
+
+Não tem. Consegui criar o repositório, mas foi sem nada, e não consigo fazer o commit e push do projeto.
+
+3 minutes ago
+
+1 message & 1 action
+
+Attached Image
+1 minute ago
+Erro de autenticação — fácil de resolver
+O Replit perdeu a permissão de mandar pro seu GitHub. Vamos religar.
+
+Solução rápida — clica em "Edit Settings"
+Clica no botão azul "Edit Settings" que apareceu na própria mensagem de erro.
+Vai abrir uma página de configurações de Git/GitHub.
+Procura uma opção tipo:
+"Reconnect GitHub", ou
+"Re-authorize", ou
+"Connect GitHub account".
+Clica.
+Vai abrir uma janela do GitHub pedindo autorização → confirma que tá logado na conta nova certa (olha o avatar no topo) → clica em "Authorize Replit" (botão verde).
+A janela fecha sozinha.
+Depois disso, tenta o Push de novo
+Volta no painel de Git (barra lateral esquerda).
+Clica em "Push" de novo.
+Espera 30s a 2min.
+Se "Edit Settings" não resolver
+Tenta este caminho alternativo:
+
+No GitHub, vai em https://github.com/settings/installations
+Procura Replit na lista.
+Clica em "Configure".
+Em "Repository access", escolhe:
+"All repositories" (mais fácil), ou
+"Only select repositories" → adiciona o psychgen-br na lista.
+Clica em "Save".
+Volta pro Replit, tenta o Push de novo.
+Se ainda der erro
+Me manda um print do que apareceu depois de clicar em "Edit Settings" — assim eu vejo exatamente onde te guiar.
+
+
+Attached Image
+o que fazer nesse print
+
+Just now
+The ability to use Replit Agent has been disabled by your admin.
+
+
+Scroll to latest
+
+Ask questions, plan your work…
+
+
+Power
+
+
+Knowledge Base Framework - Replit

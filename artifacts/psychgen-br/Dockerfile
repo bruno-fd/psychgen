@@ -8,14 +8,20 @@ ENV PORT=5173
 ENV BASE_PATH=/
 ENV NODE_ENV=production
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.26.1 --activate
 
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig.json ./
 COPY .npmrc ./
 COPY lib ./lib
+# Copy ALL workspace package.json files referenced by pnpm-lock.yaml.
+# pnpm install --frozen-lockfile validates the entire workspace, so every
+# package listed in pnpm-workspace.yaml must exist on disk.
+COPY scripts/package.json ./scripts/package.json
+COPY artifacts/api-server/package.json ./artifacts/api-server/package.json
 COPY artifacts/psychgen-br/package.json ./artifacts/psychgen-br/package.json
+COPY artifacts/mockup-sandbox/package.json ./artifacts/mockup-sandbox/package.json
 
 RUN pnpm install --frozen-lockfile
 
