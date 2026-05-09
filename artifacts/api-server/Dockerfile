@@ -49,7 +49,9 @@ COPY --from=builder /app/artifacts/api-server/r-scripts ./artifacts/api-server/r
 RUN pnpm install --frozen-lockfile
 
 COPY artifacts/api-server/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Strip Windows CRLF line endings (defense for hosts with git autocrlf=true).
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 8080
 
