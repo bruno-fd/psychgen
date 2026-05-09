@@ -27,6 +27,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libsodium-dev \
       libgit2-dev \
       libnode-dev \
+      libglpk-dev \
+      libgmp-dev \
+      libmpfr-dev \
       pandoc \
       curl \
       ca-certificates \
