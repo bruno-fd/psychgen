@@ -86,7 +86,7 @@ services:
       # forward them to the SSE clients (live progress streaming).
       - psychgen_jobs_logs:/srv/jobs-logs
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/healthz >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:8080/api/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 10
