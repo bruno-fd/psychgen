@@ -45,13 +45,17 @@ COPY --chown=r:r plumber.R /srv/plumber.R
 COPY --chown=r:r entrypoint.sh /srv/entrypoint.sh
 RUN chmod +x /srv/entrypoint.sh
 
-USER r
+# Install R packages as ROOT so they go into the system lib
+# (/usr/local/lib/R/site-library — not writable by the unprivileged `r` user).
+# Heavy deps (mirt, EGAnet, udpipe, quanteda, plumber, AIGENIE) are pre-baked
+# so the image is self-contained; the user volume at $R_LIBS_USER is for any
+# extras and survives container removal. The udpipe model is downloaded to
+# /home/r/.cache/udpipe (HOME=/home/r set above); we chown it back to `r`
+# afterwards so the runtime user can read it.
+RUN Rscript /srv/install_packages.R \
+    && chown -R r:r /home/r/.cache /home/r/.R
 
-# Install R packages into the system lib at build time. Heavy deps (mirt,
-# EGAnet, udpipe, quanteda, plumber, AIGENIE) are pre-baked so the image is
-# self-contained; the user volume at $R_LIBS_USER is for any extras and
-# survives container removal.
-RUN Rscript /srv/install_packages.R
+USER r
 
 EXPOSE 8000
 
