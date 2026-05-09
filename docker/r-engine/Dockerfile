@@ -46,7 +46,11 @@ WORKDIR /srv
 COPY --chown=r:r install_packages.R /srv/install_packages.R
 COPY --chown=r:r plumber.R /srv/plumber.R
 COPY --chown=r:r entrypoint.sh /srv/entrypoint.sh
-RUN chmod +x /srv/entrypoint.sh
+# Strip Windows CRLF line endings (host-OS-agnostic build): if the repo was
+# checked out on Windows with autocrlf=true, the shebang ends with \r and the
+# kernel can't find the interpreter ("/usr/bin/env: 'bash\r': No such file").
+RUN sed -i 's/\r$//' /srv/entrypoint.sh /srv/install_packages.R /srv/plumber.R \
+    && chmod +x /srv/entrypoint.sh
 
 # Install R packages as ROOT so they go into the system lib
 # (/usr/local/lib/R/site-library — not writable by the unprivileged `r` user).
