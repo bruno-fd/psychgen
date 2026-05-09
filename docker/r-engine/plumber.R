@@ -120,7 +120,7 @@ function() {
   })
   list(
     ok                  = TRUE,
-    rVersion            = as.character(getRVersion()),
+    rVersion            = R.version.string,
     packages            = status,
     aigenieAvailable    = suppressWarnings(requireNamespace("AIGENIE", quietly = TRUE)),
     openaiConfigured    = nzchar(Sys.getenv("OPENAI_API_KEY")) ||
