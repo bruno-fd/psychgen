@@ -19,6 +19,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
@@ -292,7 +293,7 @@ export default function RunAigenie() {
                     <h3 className="text-lg font-medium border-b pb-2">Atributos e Exemplos</h3>
                     
                     <div>
-                      <FormLabel className="mb-2 block">Atributos Obrigatórios (Restrições)</FormLabel>
+                      <Label className="mb-2 block">Atributos Obrigatórios (Restrições)</Label>
                       {attributeFields.map((field, index) => (
                         <FormField
                           key={field.id}
@@ -319,7 +320,7 @@ export default function RunAigenie() {
                     </div>
 
                     <div className="pt-4">
-                      <FormLabel className="mb-2 block">Exemplos de Itens (Few-Shot)</FormLabel>
+                      <Label className="mb-2 block">Exemplos de Itens (Few-Shot)</Label>
                       {exampleFields.map((field, index) => (
                         <FormField
                           key={field.id}
