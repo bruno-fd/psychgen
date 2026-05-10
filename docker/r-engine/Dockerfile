@@ -37,9 +37,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user owning the persisted library volume.
+# /srv/jobs-logs is pre-created with r:r ownership so the named Docker volume
+# mounted there inherits these perms on first init (Docker copies the
+# mountpoint's contents+perms into a new volume). Without this, the R process
+# (running as user `r`) gets "Permission denied" writing per-job NDJSON logs.
 RUN useradd -m -u 1000 -s /bin/bash r \
-    && mkdir -p /home/r/.R/library-4.4 /home/r/.cache /srv/r-scripts \
-    && chown -R r:r /home/r /srv
+    && mkdir -p /home/r/.R/library-4.4 /home/r/.cache /srv/r-scripts /srv/jobs-logs \
+    && chown -R r:r /home/r /srv \
+    && chmod 0775 /srv/jobs-logs
 
 WORKDIR /srv
 
